@@ -1,0 +1,5 @@
+{
+  "name": "Goggins Grind Task Tracker",
+  "description": "An application to create tasks, track daily points, and generate motivating stories in the style of David Goggins to help you stay hard and beat yesterday's score.",
+  "requestFramePermissions": []
+}

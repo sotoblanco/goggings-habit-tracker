@@ -18,31 +18,19 @@ services:
       timeout: 5s
       retries: 5
 
-  backend:
-    build: ./backend
-    container_name: goggins-backend
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: goggins-app
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/goggins
       GEMINI_API_KEY: ${GEMINI_API_KEY} # From .env file
-    volumes:
-      - ./backend/app:/app/app
-      - ./backend/alembic:/app/alembic
     ports:
       - "8000:8000"
-
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        VITE_API_BASE_URL: /api
-    container_name: goggins-frontend
-    depends_on:
-      - backend
-    ports:
-      - "3000:80" # Map host port 3000 to nginx port 80
 
 volumes:
   postgres_data:

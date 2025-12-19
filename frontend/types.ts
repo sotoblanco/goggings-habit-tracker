@@ -1,5 +1,4 @@
 
-
 export enum TaskDifficulty {
   EASY = 'Easy',
   MEDIUM = 'Medium',
@@ -10,7 +9,6 @@ export enum TaskDifficulty {
 // A task instance that is shown on a specific day. Can be a single task or an instance of a recurring one.
 export interface Task {
   id: string;
-  // FIX: Add date property to Task. This aligns with the data structure in Firestore and resolves multiple type errors.
   date: string;
   description: string;
   difficulty: TaskDifficulty;
@@ -31,8 +29,7 @@ export interface Task {
 }
 
 // A flattened task instance used for the "All Tasks" view.
-// FIX: Removed redundant `date` property, as it is now inherited from the `Task` interface.
-export interface TaskInstance extends Task {}
+export interface TaskInstance extends Task { }
 
 export type RecurrenceRule = 'Daily' | 'Weekly' | 'Weekdays' | 'Weekends';
 
@@ -86,6 +83,12 @@ export interface SideQuest {
 export interface Character {
   spent?: number;
   bonuses?: number;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  api_key?: string;
 }
 
 export interface DiaryEntry {
@@ -152,7 +155,6 @@ export interface WeeklyGoalEvaluation {
 export interface WeeklyGoal {
   id: string; // A unique identifier for the goal
   description: string;
-  // FIX: Added `targetDate` to align with its usage for calculating the week key.
   targetDate: string;
   evaluation?: WeeklyGoalEvaluation;
   alignedGoalId?: string; // ID of the long-term goal it's most aligned with
@@ -191,4 +193,25 @@ export interface PurchasedReward {
   name: string;
   cost: number;
   purchaseDate: string; // YYYY-MM-DD
+}
+
+export interface AppContext {
+  currentDate: string;
+  tasks: { [key: string]: Task[] };
+  recurringTasks: RecurringTask[];
+  sideQuests: SideQuest[];
+  diaryEntries: { [key: string]: DiaryEntry };
+  goals: Goal[];
+  weeklyGoals: { [key: string]: WeeklyGoal[] };
+  rewards: Reward[];
+  purchasedRewards: PurchasedReward[];
+  character: Character;
+  dailyScores: DailyScore[];
+  categoryScores: CategoryScore[];
+  objectiveScores: ObjectiveScore[];
+  streak: number;
+  dailyGoal: number;
+  userCategories: string[];
+  wishList: Wish[];
+  coreList: CoreTask[];
 }

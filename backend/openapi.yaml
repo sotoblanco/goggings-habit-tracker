@@ -1,0 +1,990 @@
+openapi: 3.0.0
+info:
+  title: Goggins Habit Tracker API
+  description: Backend API for the Goggins Habit Tracker application, providing authentication, data persistence, and AI proxies.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api
+    description: Local development server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # --- Auth Schemas ---
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        api_key:
+          type: string
+          description: "Encrypted Gemini API Key provided by the user"
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+      properties:
+        username:
+          type: string
+        api_key:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    # --- Core Data Schemas (from types.ts) ---
+    TaskDifficulty:
+      type: string
+      enum: [Easy, Medium, Hard, Savage]
+
+    Task:
+      type: object
+      required: [id, date, description, difficulty, completed, category, estimatedTime]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+        difficulty:
+          $ref: '#/components/schemas/TaskDifficulty'
+        completed:
+          type: boolean
+        category:
+          type: string
+        story:
+          type: string
+        recurringMasterId:
+          type: string
+        estimatedTime:
+          type: number
+        actualTime:
+          type: number
+          nullable: true
+        goalAlignment:
+          type: number
+        alignedGoalId:
+          type: string
+        justification:
+          type: string
+        time:
+          type: string
+        betAmount:
+          type: number
+        betMultiplier:
+          type: number
+        betPlaced:
+          type: boolean
+        betWon:
+          type: boolean
+        recurrenceRule:
+          type: string
+          enum: [None, Daily, Weekly, Weekdays, Weekends]
+          description: "Added for convenience in API, though frontend separates Task/RecurringTask"
+
+    RecurringTask:
+      type: object
+      properties:
+        id:
+          type: string
+        description:
+          type: string
+        difficulty:
+          $ref: '#/components/schemas/TaskDifficulty'
+        category:
+          type: string
+        recurrenceRule:
+          type: string
+          enum: [Daily, Weekly, Weekdays, Weekends]
+        startDate:
+          type: string
+        estimatedTime:
+          type: number
+        goalAlignment:
+          type: number
+        alignedGoalId:
+          type: string
+        justification:
+          type: string
+        time:
+          type: string
+        # Completions map is complex to model in SQL/flat API, 
+        # normally we'd expand these into individual Task instances or a separate completions table.
+        # For this API spec, we'll keep the object structure to match frontend for now, 
+        # but in a real DB this would likely differ.
+        completions: 
+          type: object
+          additionalProperties:
+             type: object
+             properties:
+                completed: {type: boolean}
+                actualTime: {type: number}
+                time: {type: string}
+                betAmount: {type: number}
+                betWon: {type: boolean}
+
+    Goal:
+      type: object
+      required: [id, description, targetDate]
+      properties:
+        id:
+          type: string
+        description:
+          type: string
+        targetDate:
+          type: string
+          format: date
+        label:
+          type: string
+        completed:
+          type: boolean
+        completionDate:
+          type: string
+        completionProof:
+          type: string
+        completionFeedback:
+          type: string
+        system:
+          $ref: '#/components/schemas/AtomicHabitsSuggestions'
+        contract:
+          $ref: '#/components/schemas/GoalContract'
+
+    WeeklyGoal:
+      type: object
+      required: [id, description, targetDate]
+      properties:
+        id: 
+          type: string
+        description: 
+          type: string
+        targetDate: 
+          type: string
+        alignedGoalId:
+          type: string
+        goalAlignment:
+          type: number
+        label:
+          type: string
+        evaluation:
+          $ref: '#/components/schemas/WeeklyGoalEvaluation'
+        contract:
+          $ref: '#/components/schemas/GoalContract'
+
+    GoalContract:
+      type: object
+      properties:
+        primaryObjective: {type: string}
+        contractStatement: {type: string}
+        rewardPayout: {type: number}
+        kpis:
+          type: array
+          items:
+            type: object
+            properties:
+              description: {type: string}
+              type: {type: string, enum: ['Internal Metric', 'External Metric']}
+              target: {type: string}
+        preStateAnswers:
+          type: array
+          items:
+            type: object
+            properties:
+              question: {type: string}
+              answer: {type: string}
+        fiveWhys:
+          type: array
+          items: {type: string}
+
+    SideQuest:
+      type: object
+      properties:
+        id: {type: string}
+        description: {type: string}
+        difficulty: { $ref: '#/components/schemas/TaskDifficulty' }
+        dailyGoal: {type: number}
+        completions:
+          type: object
+          additionalProperties: {type: number}
+
+    Reward:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        cost: {type: number}
+
+    PurchasedReward:
+      type: object
+      properties:
+         id: {type: string}
+         rewardId: {type: string}
+         name: {type: string}
+         cost: {type: number}
+         purchaseDate: {type: string}
+
+    DiaryEntry:
+       type: object
+       properties:
+         date: {type: string}
+         initialReflection: {type: string}
+         initialFeedback: {type: string}
+         debrief: {type: string}
+         finalFeedback: {type: string}
+         grade: {type: string}
+
+    Character:
+       type: object
+       properties:
+         spent: {type: number}
+         bonuses: {type: number}
+
+    Wish:
+      type: object
+      properties:
+        id: {type: string}
+        description: {type: string}
+        explanation: {type: string}
+        label: {type: string}
+
+    CoreTask:
+       type: object
+       properties:
+         id: {type: string}
+         description: {type: string}
+         explanation: {type: string}
+         label: {type: string}
+
+    # --- AI Schemas ---
+    AtomicHabitsSuggestions:
+      type: object
+      properties:
+        obvious: {type: array, items: {type: string}}
+        attractive: {type: array, items: {type: string}}
+        easy: {type: array, items: {type: string}}
+        satisfying: {type: array, items: {type: string}}
+
+    WeeklyGoalEvaluation:
+      type: object
+      properties:
+        alignmentScore: {type: number}
+        feedback: {type: string}
+
+    ReviewResult:
+      type: object
+      properties:
+        good: {type: array, items: {type: string}}
+        bad: {type: array, items: {type: string}}
+        suggestions:
+          type: object
+          properties:
+            keep: {type: array, items: {type: string}}
+            remove: {type: array, items: {type: string}}
+            add: {type: array, items: {type: string}}
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Tasks
+  - name: Goals
+  - name: AI
+
+paths:
+  # --- Auth ---
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content: 
+          application/json:
+            schema: 
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        200:
+          description: Successful registration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        200:
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user info
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  # --- Core Data Resources ---
+  /tasks:
+    get:
+      tags: [Tasks]
+      summary: Get tasks (optional date range filter)
+      parameters:
+        - in: query
+          name: start_date
+          schema:
+            type: string
+            format: date
+        - in: query
+          name: end_date
+          schema:
+            type: string
+            format: date
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+    post:
+      tags: [Tasks]
+      summary: Create a new task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Task'
+      responses:
+        201:
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+
+  /tasks/{id}:
+    put:
+      tags: [Tasks]
+      summary: Update a task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+               $ref: '#/components/schemas/Task'
+      responses:
+        200:
+          description: Updated
+          content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/Task'
+    delete:
+      tags: [Tasks]
+      summary: Delete a task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        204:
+          description: Deleted
+
+  /recurring-tasks:
+    get:
+      tags: [Tasks]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: array
+                items: 
+                  $ref: '#/components/schemas/RecurringTask'
+    post:
+      tags: [Tasks]
+      requestBody:
+         content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/RecurringTask'
+      responses:
+        201:
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/RecurringTask'
+
+  /recurring-tasks/{id}:
+    put:
+      tags: [Tasks]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecurringTask'
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecurringTask'
+    delete:
+      tags: [Tasks]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses:
+        204: {description: Deleted}
+
+  /goals:
+    get:
+      tags: [Goals]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Goal'
+    post:
+      tags: [Goals]
+      requestBody:
+        content:
+          application/json:
+             schema:
+               $ref: '#/components/schemas/Goal'
+      responses:
+        201:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Goal'
+
+  /goals/{id}:
+    put:
+      tags: [Goals]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Goal'
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Goal'
+    delete:
+      tags: [Goals]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses:
+        204: {description: Deleted}
+
+  /weekly-goals:
+    get:
+      tags: [Goals]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WeeklyGoal'
+    post:
+      tags: [Goals]
+      requestBody:
+        content:
+          application/json:
+            schema:
+               $ref: '#/components/schemas/WeeklyGoal'
+      responses:
+        201:
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/WeeklyGoal'
+
+  /weekly-goals/{id}:
+    put:
+      tags: [Goals]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+             schema:
+               $ref: '#/components/schemas/WeeklyGoal'
+      responses:
+         200:
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/WeeklyGoal'
+    delete:
+      tags: [Goals]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses:
+        204: {description: Deleted}
+
+  /side-quests:
+    get:
+      tags: [Tasks]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SideQuest'
+    post:
+      tags: [Tasks]
+      requestBody:
+        content:
+          application/json:
+             schema:
+               $ref: '#/components/schemas/SideQuest'
+      responses:
+        201:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SideQuest'
+
+  /side-quests/{id}:
+    put:
+      tags: [Tasks]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+           application/json:
+             schema:
+               $ref: '#/components/schemas/SideQuest'
+      responses:
+        200:
+           content:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/SideQuest'
+    delete:
+      tags: [Tasks]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses:
+        204: {description: Deleted}
+
+  /rewards:
+     get:
+       tags: [Rewards]
+       responses:
+         200:
+           content:
+             application/json:
+               schema: {type: array, items: {$ref: '#/components/schemas/Reward'}}
+     post:
+       tags: [Rewards]
+       requestBody:
+         content: {application/json: {schema: {$ref: '#/components/schemas/Reward'}}}
+       responses:
+         201:
+           content: {application/json: {schema: {$ref: '#/components/schemas/Reward'}}}
+
+  /rewards/{id}:
+    delete:
+      tags: [Rewards]
+      parameters: [{in: path, name: id, required: true, schema: {type: string}}]
+      responses: {204: {description: Deleted}}
+
+  /purchased-rewards:
+     get:
+       tags: [Rewards]
+       responses:
+         200:
+           content:
+             application/json:
+               schema: {type: array, items: {$ref: '#/components/schemas/PurchasedReward'}}
+     post:
+       tags: [Rewards]
+       requestBody:
+         content: {application/json: {schema: {$ref: '#/components/schemas/PurchasedReward'}}}
+       responses:
+         201:
+           content: {application/json: {schema: {$ref: '#/components/schemas/PurchasedReward'}}}
+
+  /diary-entries:
+     get:
+       tags: [Diary]
+       responses:
+         200:
+           content:
+             application/json:
+               schema: {type: array, items: {$ref: '#/components/schemas/DiaryEntry'}}
+     post:
+       tags: [Diary]
+       requestBody:
+         content: {application/json: {schema: {$ref: '#/components/schemas/DiaryEntry'}}}
+       responses:
+         201:
+           content: {application/json: {schema: {$ref: '#/components/schemas/DiaryEntry'}}}
+  
+  /diary-entries/{date}:
+      put:
+        tags: [Diary]
+        parameters: [{in: path, name: date, required: true, schema: {type: string}}]
+        requestBody:
+          content: {application/json: {schema: {$ref: '#/components/schemas/DiaryEntry'}}}
+        responses:
+          200:
+            content: {application/json: {schema: {$ref: '#/components/schemas/DiaryEntry'}}}
+
+  /character:
+    get:
+      tags: [User]
+      responses:
+         200:
+           content:
+             application/json:
+               schema: {$ref: '#/components/schemas/Character'}
+    put:
+      tags: [User]
+      requestBody:
+         content: {application/json: {schema: {$ref: '#/components/schemas/Character'}}}
+      responses:
+        200:
+           content: {application/json: {schema: {$ref: '#/components/schemas/Character'}}}
+
+  /wish-list:
+    get:
+      tags: [Tasks]
+      responses: {200: {content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Wish'}}}}}}
+    post:
+      tags: [Tasks]
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/Wish'}}}}
+      responses: {201: {content: {application/json: {schema: {$ref: '#/components/schemas/Wish'}}}}}
+  
+  /wish-list/{id}:
+     delete:
+       tags: [Tasks]
+       parameters: [{in: path, name: id, required: true, schema: {type: string}}]
+       responses: {204: {description: Deleted}}
+
+  /core-list:
+    get:
+      tags: [Tasks]
+      responses: {200: {content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/CoreTask'}}}}}}
+    post:
+      tags: [Tasks]
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/CoreTask'}}}}
+      responses: {201: {content: {application/json: {schema: {$ref: '#/components/schemas/CoreTask'}}}}}
+  
+  /core-list/{id}:
+     delete:
+       tags: [Tasks]
+       parameters: [{in: path, name: id, required: true, schema: {type: string}}]
+       responses: {204: {description: Deleted}}
+
+  # --- AI Services ---
+  /ai/story:
+    post:
+      tags: [AI]
+      summary: Generate a Goggins motivational story
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task: { $ref: '#/components/schemas/Task' }
+                goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
+                justification: { type: string }
+      responses:
+        200:
+          content: { application/json: { schema: { type: object, properties: { story: { type: string } } } } }
+
+  /ai/label:
+    post:
+      tags: [AI]
+      summary: Generate a label for text
+      requestBody:
+        content:
+          application/json:
+             schema:
+                type: object
+                properties: { text: { type: string } }
+      responses:
+         200:
+           content: { application/json: { schema: { type: object, properties: { label: { type: string } } } } }
+
+  /ai/analyze-goal-alignment:
+    post:
+      tags: [AI]
+      summary: Analyze task goal alignment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                taskDescription: { type: string }
+                activeGoals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
+      responses:
+        200:
+          content:
+             application/json:
+               schema:
+                 type: object
+                 properties:
+                   alignmentScore: {type: number}
+                   justification: {type: string}
+                   alignedGoalId: {type: string}
+
+  /ai/reflection-feedback:
+    post:
+      tags: [AI]
+      summary: Generate reflection feedback
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reflection: { type: string }
+                goals: { type: array, items: { $ref: '#/components/schemas/Goal' } }
+      responses:
+         200:
+           content: { application/json: { schema: { type: object, properties: { feedback: { type: string } } } } }
+
+  /ai/diary-feedback:
+    post:
+       tags: [AI]
+       summary: Generate diary feedback and grade
+       requestBody:
+         content:
+           application/json:
+             schema:
+               type: object
+               properties:
+                 debrief: 
+                    type: object
+                    properties:
+                       debriefEntry: {type: string}
+                       initialReflection: {type: string}
+                       tasks: {type: array, items: {$ref: '#/components/schemas/Task'}}
+                       earnings: {type: number}
+                 goals: {type: array, items: {$ref: '#/components/schemas/Goal'}}
+       responses:
+          200:
+            content: 
+              application/json:
+                 schema:
+                    type: object
+                    properties:
+                       feedback: {type: string}
+                       grade: {type: string}
+
+  /ai/review:
+    post:
+      tags: [AI]
+      summary: Generate periodic review
+      requestBody:
+        content:
+          application/json:
+             schema:
+               type: object
+               properties:
+                 reviewData: {type: object}
+                 goals: {type: array, items: {$ref: '#/components/schemas/Goal'}}
+                 sideQuests: {type: array, items: {$ref: '#/components/schemas/SideQuest'}}
+      responses:
+         200:
+           content: {application/json: {schema: {$ref: '#/components/schemas/ReviewResult'}}}
+
+  /ai/goal-change-verdict:
+    post:
+      tags: [AI]
+      requestBody:
+        content:
+          application/json:
+            schema:
+               type: object
+               properties:
+                  justification: {type: string}
+                  currentGoal: {type: string}
+      responses:
+        200:
+           content:
+             application/json:
+               schema:
+                 type: object
+                 properties:
+                   approved: {type: boolean}
+                   feedback: {type: string}
+
+  /ai/goal-completion-verdict:
+    post:
+       tags: [AI]
+       requestBody:
+          content: 
+             application/json:
+               schema:
+                  type: object
+                  properties:
+                     goalDescription: {type: string}
+                     completionProof: {type: string}
+       responses:
+          200:
+             content:
+               application/json:
+                 schema:
+                    type: object
+                    properties:
+                       approved: {type: boolean}
+                       feedback: {type: string}
+
+  /ai/atomic-system:
+     post:
+       tags: [AI]
+       requestBody:
+         content:
+           application/json:
+              schema:
+                 type: object
+                 properties:
+                    newGoal: {$ref: '#/components/schemas/Goal'}
+                    allGoals: {type: array, items: {$ref: '#/components/schemas/Goal'}}
+                    accomplishmentsSummary: {type: object}
+       responses:
+          200:
+             content:
+               application/json:
+                 schema: {$ref: '#/components/schemas/AtomicHabitsSuggestions'}
+
+  /ai/weekly-briefing:
+    post:
+      tags: [AI]
+      requestBody:
+         content:
+            application/json:
+               schema:
+                 type: object
+                 properties:
+                    previousWeekEvaluations: {type: array, items: {$ref: '#/components/schemas/WeeklyGoalEvaluation'}}
+                    nextWeekGoals: {type: array, items: {$ref: '#/components/schemas/WeeklyGoal'}}
+                    longTermGoals: {type: array, items: {$ref: '#/components/schemas/Goal'}}
+      responses:
+         200:
+           content: {application/json: {schema: {type: object, properties: {briefing: {type: string}}}}}
+
+  /ai/enhance-text:
+     post:
+        tags: [AI]
+        requestBody:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                   text: {type: string}
+                   type: {type: string, enum: [mission, goal, weekly_objective]}
+        responses:
+           200:
+             content: {application/json: {schema: {type: object, properties: {enhancedText: {type: string}}}}}
+
+  /ai/chat:
+    post:
+      tags: [AI]
+      requestBody:
+         content:
+           application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sender: {type: string}
+                        content: {type: string}
+      responses:
+        200:
+           content:
+             application/json:
+               schema:
+                 type: object
+                 properties:
+                    response: {type: string}

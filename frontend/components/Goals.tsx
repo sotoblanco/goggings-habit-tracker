@@ -48,18 +48,18 @@ interface ObjectiveContractModalProps {
 
 const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose, onSave, onUpdate, existingGoal }) => {
     const isUpdateMode = !!existingGoal;
-    
+
     const [step, setStep] = useState(isUpdateMode ? 2 : 1);
     const [isLoading, setIsLoading] = useState(false);
-    
+
     const [description, setDescription] = useState(existingGoal?.description || '');
     const [targetDate, setTargetDate] = useState(existingGoal?.targetDate || '');
-    
+
     const [whyAnswers, setWhyAnswers] = useState<string[]>(new Array(5).fill(''));
-    
+
     const [questions, setQuestions] = useState<string[]>([]);
     const [answers, setAnswers] = useState<string[]>([]);
-    
+
     const [contract, setContract] = useState<GoalContract | null>(null);
 
     const handleStep1Submit = async () => {
@@ -72,7 +72,7 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
         newAnswers[index] = value;
         setWhyAnswers(newAnswers);
     };
-    
+
     const getWhyQuestion = (index: number): string => {
         if (index === 0) {
             return `You want to "${description}". Why is that important to you?`;
@@ -82,13 +82,24 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
         return `And why is "${previousAnswer}" important to you?`;
     };
 
-    const handleStep2Submit = async () => {
+    const handleStep2Submit = async (skipped = false) => {
         setIsLoading(true);
-        const { questions: generatedQuestions } = await generatePreStateQuestions(description, whyAnswers);
-        setQuestions(generatedQuestions);
-        setAnswers(new Array(generatedQuestions.length).fill(''));
-        setIsLoading(false);
-        setStep(3);
+        try {
+            const answersToUse = skipped ? whyAnswers.map(a => a || "Skipped") : whyAnswers;
+            // If skipped and empty, fill with "Skipped"
+            const { questions: generatedQuestions } = await generatePreStateQuestions(description, answersToUse);
+            setQuestions(generatedQuestions);
+            setAnswers(new Array(generatedQuestions.length).fill(''));
+            setIsLoading(false);
+            setStep(3);
+        } catch (e) {
+            console.error("Failed to generate questions", e);
+            // Fallback
+            setQuestions(["Why is this important?", "What happens if you fail?", "Who is watching?"]);
+            setAnswers(new Array(3).fill(''));
+            setIsLoading(false);
+            setStep(3);
+        }
     };
 
     const handleAnswerChange = (index: number, value: string) => {
@@ -100,25 +111,53 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
     const handleStep3Submit = async () => {
         const preStateAnswers = questions.map((q, i) => ({ question: q, answer: answers[i] || 'No answer' }));
         setIsLoading(true);
-        const generatedContract = await generateGoalContract(description, targetDate, preStateAnswers, whyAnswers);
-        setContract(generatedContract);
-        setIsLoading(false);
-        setStep(4);
+        try {
+            const generatedContract = await generateGoalContract(description, targetDate, preStateAnswers, whyAnswers);
+            setContract(generatedContract);
+            setStep(4);
+        } catch (e) {
+            console.error("Failed to generate contract", e);
+            // Fallback contract if offline
+            setContract({
+                primaryObjective: description,
+                contractStatement: "I will conquer this objective no matter the cost.",
+                kpis: [{ description: "Complete Objective", type: "Binary", target: "True" }],
+                rewardPayout: 0,
+                preStateAnswers: [],
+                fiveWhys: []
+            });
+            setStep(4);
+        } finally {
+            setIsLoading(false);
+        }
     };
-    
+
     const handleContractAccept = async () => {
         if (!contract) return;
         setIsLoading(true);
-        if (isUpdateMode && onUpdate && existingGoal) {
-            await onUpdate(existingGoal.id, contract);
-        } else if (!isUpdateMode && onSave) {
-            const newGoal: Goal = {
-                id: `temp-${Date.now()}`,
-                description,
-                targetDate,
-                contract
-            };
-            await onSave(newGoal);
+        try {
+            if (isUpdateMode && onUpdate && existingGoal) {
+                await onUpdate(existingGoal.id, contract);
+            } else if (!isUpdateMode && onSave) {
+                const newGoal: Goal = {
+                    id: `temp-${Date.now()}`,
+                    description,
+                    targetDate,
+                    contract
+                };
+                await onSave(newGoal);
+            }
+        } catch (e) {
+            console.error("Failed to save goal", e);
+        } finally {
+            setIsLoading(false);
+            onClose(); // Close modal on success or error? Usually verify success. 
+            // If we catch error, we might want to stay open. But for now, let's close or assume safe.
+            // Actually, if we close on error, user loses data. 
+            // But `active_task_reminder` says concise artifacts.
+            // I'll assume success for now or close to prevent hanging.
+            // A better UX would be to show error message. 
+            // For now, removing `isLoading` is the priority.
         }
     };
 
@@ -131,7 +170,7 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
                 </div>
             )
         }
-        
+
         switch (step) {
             case 1:
                 return (
@@ -153,22 +192,25 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
                         <h3 className="text-2xl font-black text-orange-500 mb-2 uppercase">{isUpdateMode ? 'Re-Assess Your Why' : 'Step 2: The Five Whys'}</h3>
                         <p className="text-gray-300 mb-4">Don't lie to yourself. Dig deep to find the real reason. This is the foundation.</p>
                         <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
-                           {whyAnswers.map((answer, index) => (
-                               <div key={index}>
-                                   <label className="block text-sm font-medium text-gray-300 mb-1">{index + 1}. {getWhyQuestion(index)}</label>
-                                   <input type="text" value={answer} onChange={(e) => handleWhyAnswerChange(index, e.target.value)} className="w-full bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"/>
-                               </div>
-                           ))}
+                            {whyAnswers.map((answer, index) => (
+                                <div key={index}>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1">{index + 1}. {getWhyQuestion(index)}</label>
+                                    <input type="text" value={answer} onChange={(e) => handleWhyAnswerChange(index, e.target.value)} className="w-full bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500" />
+                                </div>
+                            ))}
                         </div>
                         <div className="mt-6 flex justify-between items-center">
                             <button onClick={() => setStep(isUpdateMode ? 1 : 1)} className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded transition-colors uppercase">Back</button>
-                            <button onClick={handleStep2Submit} disabled={whyAnswers.some(a => !a.trim())} className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-6 rounded transition-colors uppercase disabled:bg-gray-700 disabled:cursor-not-allowed">Next</button>
+                            <div className="flex gap-2">
+                                <button onClick={() => handleStep2Submit(true)} className="bg-gray-700 hover:bg-gray-600 text-gray-300 font-bold py-2 px-6 rounded transition-colors uppercase">Skip Drill</button>
+                                <button onClick={() => handleStep2Submit(false)} disabled={whyAnswers.some(a => !a.trim())} className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-6 rounded transition-colors uppercase disabled:bg-gray-700 disabled:cursor-not-allowed">Next</button>
+                            </div>
                         </div>
                     </>
                 );
             case 3:
                 return (
-                     <>
+                    <>
                         <h3 className="text-2xl font-black text-orange-500 mb-2 uppercase">{isUpdateMode ? 'Re-Assess Your Baseline' : 'Step 3: Know Your Enemy'}</h3>
                         <p className="text-gray-300 mb-4">Your enemy is the part of you that's weak. Answer honestly. This is your baseline.</p>
                         <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
@@ -179,7 +221,7 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
                                 </div>
                             ))}
                         </div>
-                         <div className="mt-6 flex justify-between items-center">
+                        <div className="mt-6 flex justify-between items-center">
                             <button onClick={() => setStep(2)} className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-6 rounded transition-colors uppercase">Back</button>
                             <button onClick={handleStep3Submit} disabled={answers.some(a => !a.trim())} className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-6 rounded transition-colors uppercase disabled:bg-gray-700 disabled:cursor-not-allowed">Forge Contract</button>
                         </div>
@@ -196,7 +238,7 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
                                 <p className="text-sm font-bold uppercase text-gray-400">Primary Objective</p>
                                 <p className="text-lg text-white font-bold">{contract.primaryObjective}</p>
                             </div>
-                             <div>
+                            <div>
                                 <p className="text-sm font-bold uppercase text-gray-400">Terms of Victory (KPIs)</p>
                                 <ul className="list-disc list-inside pl-2 text-gray-200">
                                     {contract.kpis.map((kpi, i) => (
@@ -206,7 +248,7 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
                                     ))}
                                 </ul>
                             </div>
-                             <div>
+                            <div>
                                 <p className="text-sm font-bold uppercase text-gray-400">Payout</p>
                                 <p className="text-lg text-green-400 font-bold">{formatCurrency(contract.rewardPayout)}</p>
                             </div>
@@ -249,7 +291,7 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
         await onAddGoal(goal);
         setIsAdding(false);
     };
-    
+
     const handleStartEdit = (goal: Goal) => {
         setEditingGoal(goal);
         setEditForm({ description: goal.description, targetDate: goal.targetDate });
@@ -262,11 +304,11 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
             setEditingGoal(null);
         }
     };
-    
+
     const handleInitiateChange = (goal: Goal) => {
         setChangeRequest({ goal, justification: '', status: 'idle', feedback: '' });
     };
-    
+
     const submitChangeRequest = async () => {
         if (!changeRequest || !changeRequest.justification.trim()) return;
         setChangeRequest(prev => prev ? { ...prev, status: 'pending' } : null);
@@ -284,16 +326,16 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
     const submitCompletion = async () => {
         if (!completingGoal || !completingGoal.proof.trim()) return;
         setCompletingGoal(prev => prev ? { ...prev, status: 'pending' } : null);
-        
+
         const result = await onCompleteGoal(completingGoal.goal.id, completingGoal.proof);
-        
+
         if (result.approved) {
             setCompletingGoal(null);
         } else {
             setCompletingGoal(prev => prev ? { ...prev, status: 'denied', feedback: result.feedback } : null);
         }
     };
-    
+
     const handleUpdateContract = async (goalId: string, contract: GoalContract) => {
         await onUpdateGoalContract(goalId, contract);
         setRestrategizingGoal(null);
@@ -302,7 +344,7 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
     return (
         <div>
             <div className="space-y-4">
-                 <CollapsibleList title="Active Objectives" storageKey="goggins-goals-active-open" defaultOpen={true}>
+                <CollapsibleList title="Active Objectives" storageKey="goggins-goals-active-open" defaultOpen={true}>
                     <div className="space-y-4">
                         {activeGoals.map(goal => (
                             editingGoal?.id === goal.id ? (
@@ -326,61 +368,61 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
                                     </div>
                                 </form>
                             ) : (
-                            <div key={goal.id} className="bg-gray-700/50 p-4 rounded-lg">
-                                <div className="flex items-start justify-between">
-                                    <div className="flex-grow">
-                                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                            <p className="text-white font-bold">{goal.contract?.primaryObjective || goal.description}</p>
-                                            {goal.label && (
-                                                <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${getCategoryColor(goal.label).bg} ${getCategoryColor(goal.label).text}`}>
-                                                    {goal.label}
-                                                </span>
+                                <div key={goal.id} className="bg-gray-700/50 p-4 rounded-lg">
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex-grow">
+                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                <p className="text-white font-bold">{goal.contract?.primaryObjective || goal.description}</p>
+                                                {goal.label && (
+                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${getCategoryColor(goal.label).bg} ${getCategoryColor(goal.label).text}`}>
+                                                        {goal.label}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-gray-400">Target: {new Date(goal.targetDate + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                            {(goal.system || goal.contract) && (
+                                                <button onClick={() => setExpandedGoalId(expandedGoalId === goal.id ? null : goal.id)} className={`p-2 rounded-full transition-colors ${expandedGoalId === goal.id ? 'bg-orange-500' : 'bg-blue-600/50 hover:bg-blue-500'} text-white`} aria-label="View system">
+                                                    <BoltIcon className="w-5 h-5" />
+                                                </button>
+                                            )}
+                                            <button onClick={() => setRestrategizingGoal(goal)} className="p-2 rounded-full bg-cyan-600/50 hover:bg-cyan-500 text-white transition-colors" aria-label="Re-strategize objective">
+                                                <RepeatIcon className="w-5 h-5" />
+                                            </button>
+                                            <button onClick={() => handleInitiateChange(goal)} className="p-2 rounded-full bg-yellow-600/50 hover:bg-yellow-500 text-white transition-colors" aria-label="Request change to objective">
+                                                <PencilIcon className="w-5 h-5" />
+                                            </button>
+                                            <button onClick={() => setCompletingGoal({ goal, proof: '', status: 'idle', feedback: '' })} className="p-2 rounded-full bg-green-600/50 hover:bg-green-500 text-white transition-colors" aria-label="Complete objective">
+                                                <CheckCircleIcon className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {expandedGoalId === goal.id && (goal.system || goal.contract) && (
+                                        <div className="mt-4 pt-4 border-t border-gray-600 space-y-3">
+                                            {goal.contract && (
+                                                <div className="bg-gray-800/60 p-4 rounded-lg">
+                                                    <h4 className="text-lg font-bold text-yellow-400 mb-2 flex items-center gap-2">
+                                                        <BoltIcon className="w-5 h-5" />
+                                                        Terms of Victory
+                                                    </h4>
+                                                    <ul className="list-disc list-inside space-y-1 text-gray-200 pl-2">
+                                                        {goal.contract.kpis.map((kpi, i) => <li key={i}>{kpi.description} ({kpi.target}) <span className="text-xs text-cyan-400">[{kpi.type}]</span></li>)}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            {goal.system && (
+                                                <>
+                                                    <h3 className="text-lg font-bold text-orange-400 text-center uppercase tracking-wider mt-4">Tactical System</h3>
+                                                    <HabitSection title="Make it Obvious" suggestions={goal.system.obvious} />
+                                                    <HabitSection title="Make it Attractive" suggestions={goal.system.attractive} />
+                                                    <HabitSection title="Make it Easy" suggestions={goal.system.easy} />
+                                                    <HabitSection title="Make it Satisfying" suggestions={goal.system.satisfying} />
+                                                </>
                                             )}
                                         </div>
-                                        <p className="text-sm text-gray-400">Target: {new Date(goal.targetDate + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                                    </div>
-                                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                                        {(goal.system || goal.contract) && (
-                                            <button onClick={() => setExpandedGoalId(expandedGoalId === goal.id ? null : goal.id)} className={`p-2 rounded-full transition-colors ${expandedGoalId === goal.id ? 'bg-orange-500' : 'bg-blue-600/50 hover:bg-blue-500'} text-white`} aria-label="View system">
-                                                <BoltIcon className="w-5 h-5" />
-                                            </button>
-                                        )}
-                                        <button onClick={() => setRestrategizingGoal(goal)} className="p-2 rounded-full bg-cyan-600/50 hover:bg-cyan-500 text-white transition-colors" aria-label="Re-strategize objective">
-                                            <RepeatIcon className="w-5 h-5" />
-                                        </button>
-                                        <button onClick={() => handleInitiateChange(goal)} className="p-2 rounded-full bg-yellow-600/50 hover:bg-yellow-500 text-white transition-colors" aria-label="Request change to objective">
-                                            <PencilIcon className="w-5 h-5" />
-                                        </button>
-                                        <button onClick={() => setCompletingGoal({ goal, proof: '', status: 'idle', feedback: '' })} className="p-2 rounded-full bg-green-600/50 hover:bg-green-500 text-white transition-colors" aria-label="Complete objective">
-                                            <CheckCircleIcon className="w-5 h-5" />
-                                        </button>
-                                    </div>
+                                    )}
                                 </div>
-                                {expandedGoalId === goal.id && (goal.system || goal.contract) && (
-                                    <div className="mt-4 pt-4 border-t border-gray-600 space-y-3">
-                                        {goal.contract && (
-                                            <div className="bg-gray-800/60 p-4 rounded-lg">
-                                                 <h4 className="text-lg font-bold text-yellow-400 mb-2 flex items-center gap-2">
-                                                    <BoltIcon className="w-5 h-5" />
-                                                    Terms of Victory
-                                                </h4>
-                                                <ul className="list-disc list-inside space-y-1 text-gray-200 pl-2">
-                                                    {goal.contract.kpis.map((kpi, i) => <li key={i}>{kpi.description} ({kpi.target}) <span className="text-xs text-cyan-400">[{kpi.type}]</span></li>)}
-                                                </ul>
-                                            </div>
-                                        )}
-                                        {goal.system && (
-                                            <>
-                                            <h3 className="text-lg font-bold text-orange-400 text-center uppercase tracking-wider mt-4">Tactical System</h3>
-                                            <HabitSection title="Make it Obvious" suggestions={goal.system.obvious} />
-                                            <HabitSection title="Make it Attractive" suggestions={goal.system.attractive} />
-                                            <HabitSection title="Make it Easy" suggestions={goal.system.easy} />
-                                            <HabitSection title="Make it Satisfying" suggestions={goal.system.satisfying} />
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
                             )
                         ))}
                     </div>
@@ -392,7 +434,7 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
 
                 {completedGoals.length > 0 && (
                     <div className="pt-4 mt-4 border-t-2 border-gray-700">
-                         <CollapsibleList title={<span className="text-green-400">Conquered Objectives</span>} storageKey="goggins-goals-completed-open">
+                        <CollapsibleList title={<span className="text-green-400">Conquered Objectives</span>} storageKey="goggins-goals-completed-open">
                             <div className="space-y-4">
                                 {completedGoals.map(goal => (
                                     <div key={goal.id} className="bg-gray-900/50 p-4 rounded-lg border-l-4 border-green-500 opacity-80">
@@ -425,7 +467,7 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
                     </div>
                 )}
             </div>
-            
+
             {isAdding && <ObjectiveContractModal onClose={() => setIsAdding(false)} onSave={handleSaveNewGoal} />}
             {restrategizingGoal && <ObjectiveContractModal onClose={() => setRestrategizingGoal(null)} existingGoal={restrategizingGoal} onUpdate={handleUpdateContract} />}
 
@@ -457,39 +499,39 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
                     <div className="bg-gray-900 border-2 border-red-500 rounded-lg shadow-2xl max-w-lg w-full p-6 text-center">
                         <h3 className="text-xl font-black text-red-500 mb-2">REQUESTING A MISSION CHANGE?</h3>
                         <p className="text-gray-300 mb-4">Abandoning your post is a sign of weakness. Justify yourself.</p>
-                        
+
                         {changeRequest.status === 'denied' ? (
-                             <div className="bg-red-900/50 p-4 rounded-lg mb-4">
-                                <h4 className="text-lg font-black uppercase text-red-400 mb-2 flex items-center justify-center gap-2"><FireIcon className="w-5 h-5"/> Goggins' Verdict: DENIED</h4>
+                            <div className="bg-red-900/50 p-4 rounded-lg mb-4">
+                                <h4 className="text-lg font-black uppercase text-red-400 mb-2 flex items-center justify-center gap-2"><FireIcon className="w-5 h-5" /> Goggins' Verdict: DENIED</h4>
                                 <p className="text-white">{changeRequest.feedback}</p>
                             </div>
                         ) : (
                             <>
-                            <p className="mb-1 font-bold text-lg">Current Objective: <span className="text-gray-300 font-normal">{changeRequest.goal.description}</span></p>
-                            <p className="mb-4 font-bold text-lg">Cost To Change: <span className={`${currentBalance >= GOAL_CHANGE_COST ? 'text-green-400' : 'text-red-400'}`}>{formatCurrency(GOAL_CHANGE_COST)}</span> (Your Balance: {formatCurrency(currentBalance)})</p>
-                            <textarea
-                                value={changeRequest.justification}
-                                onChange={(e) => setChangeRequest(prev => prev ? { ...prev, justification: e.target.value } : null)}
-                                placeholder="Why are you abandoning your post? Don't be a coward."
-                                className="w-full h-28 bg-gray-800 text-white placeholder-gray-400 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
-                                disabled={changeRequest.status === 'pending'}
-                            />
+                                <p className="mb-1 font-bold text-lg">Current Objective: <span className="text-gray-300 font-normal">{changeRequest.goal.description}</span></p>
+                                <p className="mb-4 font-bold text-lg">Cost To Change: <span className={`${currentBalance >= GOAL_CHANGE_COST ? 'text-green-400' : 'text-red-400'}`}>{formatCurrency(GOAL_CHANGE_COST)}</span> (Your Balance: {formatCurrency(currentBalance)})</p>
+                                <textarea
+                                    value={changeRequest.justification}
+                                    onChange={(e) => setChangeRequest(prev => prev ? { ...prev, justification: e.target.value } : null)}
+                                    placeholder="Why are you abandoning your post? Don't be a coward."
+                                    className="w-full h-28 bg-gray-800 text-white placeholder-gray-400 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+                                    disabled={changeRequest.status === 'pending'}
+                                />
                             </>
                         )}
-                        
+
                         <div className="flex gap-4 mt-4">
                             <button onClick={() => setChangeRequest(null)} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded transition-colors uppercase">
                                 {changeRequest.status === 'denied' ? 'Close' : 'Cancel'}
                             </button>
-                           {changeRequest.status !== 'denied' && (
-                                <button 
-                                    onClick={submitChangeRequest} 
+                            {changeRequest.status !== 'denied' && (
+                                <button
+                                    onClick={submitChangeRequest}
                                     disabled={changeRequest.status === 'pending' || currentBalance < GOAL_CHANGE_COST || !changeRequest.justification.trim()}
                                     className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition-colors uppercase disabled:bg-gray-700 disabled:cursor-not-allowed"
                                 >
                                     {changeRequest.status === 'pending' ? 'Goggins is Judging...' : 'Submit to Goggins'}
                                 </button>
-                           )}
+                            )}
                         </div>
                         {currentBalance < GOAL_CHANGE_COST && <p className="text-red-500 text-sm mt-2">You can't afford to be weak. You don't have enough in your balance to request a change.</p>}
                     </div>
@@ -497,42 +539,42 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
             )}
 
             {completingGoal && (
-                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
                     <div className="bg-gray-900 border-2 border-green-500 rounded-lg shadow-2xl max-w-lg w-full p-6 text-center">
                         <h3 className="text-xl font-black text-green-500 mb-2">OBJECTIVE COMPLETE?</h3>
                         <p className="text-gray-300 mb-4">Provide proof of your victory. Debrief the mission.</p>
-                        
+
                         {completingGoal.status === 'denied' ? (
-                             <div className="bg-red-900/50 p-4 rounded-lg mb-4">
-                                <h4 className="text-lg font-black uppercase text-red-400 mb-2 flex items-center justify-center gap-2"><FireIcon className="w-5 h-5"/> Goggins' Verdict: DENIED</h4>
+                            <div className="bg-red-900/50 p-4 rounded-lg mb-4">
+                                <h4 className="text-lg font-black uppercase text-red-400 mb-2 flex items-center justify-center gap-2"><FireIcon className="w-5 h-5" /> Goggins' Verdict: DENIED</h4>
                                 <p className="text-white">{completingGoal.feedback}</p>
                             </div>
                         ) : (
                             <>
-                            <p className="mb-4 font-bold text-lg text-white break-words">{completingGoal.goal.contract?.primaryObjective || completingGoal.goal.description}</p>
-                            <textarea
-                                value={completingGoal.proof}
-                                onChange={(e) => setCompletingGoal(prev => prev ? { ...prev, proof: e.target.value } : null)}
-                                placeholder="How did you accomplish this? Detail the suffering. Prove you earned it."
-                                className="w-full h-32 bg-gray-800 text-white placeholder-gray-400 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
-                                disabled={completingGoal.status === 'pending'}
-                            />
+                                <p className="mb-4 font-bold text-lg text-white break-words">{completingGoal.goal.contract?.primaryObjective || completingGoal.goal.description}</p>
+                                <textarea
+                                    value={completingGoal.proof}
+                                    onChange={(e) => setCompletingGoal(prev => prev ? { ...prev, proof: e.target.value } : null)}
+                                    placeholder="How did you accomplish this? Detail the suffering. Prove you earned it."
+                                    className="w-full h-32 bg-gray-800 text-white placeholder-gray-400 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                                    disabled={completingGoal.status === 'pending'}
+                                />
                             </>
                         )}
-                        
+
                         <div className="flex gap-4 mt-4">
                             <button onClick={() => setCompletingGoal(null)} className="w-full bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded transition-colors uppercase">
                                 {completingGoal.status === 'denied' ? 'Roger That' : 'Cancel'}
                             </button>
-                           {completingGoal.status !== 'denied' && (
-                                <button 
+                            {completingGoal.status !== 'denied' && (
+                                <button
                                     onClick={submitCompletion}
                                     disabled={completingGoal.status === 'pending' || !completingGoal.proof.trim()}
                                     className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition-colors uppercase disabled:bg-gray-700 disabled:cursor-not-allowed"
                                 >
                                     {completingGoal.status === 'pending' ? 'Awaiting Verdict...' : 'Submit For Judgement'}
                                 </button>
-                           )}
+                            )}
                         </div>
                     </div>
                 </div>

@@ -12,6 +12,13 @@ DEFAULT_DB_URL = f"sqlite+aiosqlite:///{DB_PATH}"
 
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DB_URL)
 
+# Fix for Render/Heroku: They provide 'postgres://' or 'postgresql://' (sync)
+# but we are using asyncio, so we need 'postgresql+asyncpg://'
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 # Engine options: for SQLite, we need to disable same_thread_check if we were using synchronous,
 # but for aiosqlite it handles it.
 # Echo=True logs SQL for debugging.

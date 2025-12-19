@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: goggins-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: goggins
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432" # Host:Container (using 5433 to avoid conflict with local postgres)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: goggins-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/goggins
+      GEMINI_API_KEY: ${GEMINI_API_KEY} # From .env file
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: goggins-frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80" # Map host port 3000 to nginx port 80
+
+volumes:
+  postgres_data:

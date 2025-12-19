@@ -30,6 +30,7 @@ class User(BaseModel):
 
 class LoginRequest(BaseModel):
     username: str
+    password: Optional[str] = None
     api_key: Optional[str] = None # Input
 
 class UserUpdate(BaseModel):

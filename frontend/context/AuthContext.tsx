@@ -5,8 +5,8 @@ import { User } from '../types';
 interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
-    login: (username: string) => Promise<void>;
-    signup: (username: string) => Promise<void>;
+    login: (username: string, password?: string) => Promise<void>;
+    signup: (username: string, password?: string) => Promise<void>;
     logout: () => void;
     isLoading: boolean;
 }
@@ -33,10 +33,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         initAuth();
     }, []);
 
-    const login = async (username: string) => {
+    const login = async (username: string, password?: string) => {
         setIsLoading(true);
         try {
-            const loggedInUser = await authService.login(username);
+            const loggedInUser = await authService.login(username, password);
             setUser(loggedInUser);
             setIsAuthenticated(true);
         } finally {
@@ -44,10 +44,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
-    const signup = async (username: string) => {
+    const signup = async (username: string, password?: string) => {
         setIsLoading(true);
         try {
-            const newUser = await authService.signup(username);
+            const newUser = await authService.signup(username, password);
             setUser(newUser);
             setIsAuthenticated(true);
         } finally {

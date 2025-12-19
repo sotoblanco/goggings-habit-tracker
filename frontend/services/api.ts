@@ -5,7 +5,7 @@ import {
     User
 } from '../types';
 
-const BASE_URL = 'http://localhost:8000';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 const getToken = () => localStorage.getItem('goggins_auth_token');
 
@@ -42,8 +42,8 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 export const api = {
     // Auth
     auth: {
-        login: (username: string, apiKey?: string) => request<{ token: string, user: User }>('/auth/login', { method: 'POST', body: JSON.stringify({ username, api_key: apiKey }) }),
-        register: (username: string, apiKey?: string) => request<{ token: string, user: User }>('/auth/register', { method: 'POST', body: JSON.stringify({ username, api_key: apiKey }) }),
+        login: (username: string, password?: string, apiKey?: string) => request<{ token: string, user: User }>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password, api_key: apiKey }) }),
+        register: (username: string, password?: string, apiKey?: string) => request<{ token: string, user: User }>('/auth/register', { method: 'POST', body: JSON.stringify({ username, password, api_key: apiKey }) }),
         me: () => request<User>('/auth/me'),
         updateProfile: (data: { api_key?: string }) => request<User>('/auth/me', { method: 'PUT', body: JSON.stringify(data) }),
     },

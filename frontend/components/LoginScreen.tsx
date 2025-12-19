@@ -3,21 +3,41 @@ import { useAuth } from '../context/AuthContext';
 import { BoltIcon, KeyIcon } from './Icons';
 
 const LoginScreen: React.FC = () => {
-    const { login } = useAuth();
+    const { login, signup } = useAuth();
     const [username, setUsername] = useState('');
-    const [password, setPassword] = useState(''); // Just for visual, we don't check it
+    const [password, setPassword] = useState('');
     const [isSignup, setIsSignup] = useState(false);
     const [error, setError] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError('');
+
         if (!username) {
             setError("You need a name, soldier.");
             return;
         }
 
-        // In our mock, signup and login are essentially the same action store-wise
-        await login(username);
+        if (!password) {
+            setError("A secure perimeter requires a password.");
+            return;
+        }
+
+        try {
+            if (isSignup) {
+                await signup(username, password);
+            } else {
+                await login(username, password);
+            }
+        } catch (err: any) {
+            console.error(err);
+            if (isSignup) {
+                setError(err.message.includes("already exists") ? "NAME ALREADY TAKEN. PICK ANOTHER." : "ENLISTMENT FAILED.");
+            } else {
+                // User requested "user not found" for both wrong user and wrong password
+                setError("user not found");
+            }
+        }
     };
 
     return (

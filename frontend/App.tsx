@@ -1,92 +1,249 @@
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { CalendarContainer, CalendarViewType } from './components/CalendarView';
-import { TaskInput } from './components/TaskModal';
-import { Leaderboard, CategoryLeaderboard, ObjectiveLeaderboard } from './components/Leaderboard';
-import { MotivationModal } from './components/MotivationModal';
-import { SideQuests } from './components/SideQuests';
-import { Header } from './components/Header';
-import { CharacterStatus } from './components/CharacterStatus';
-import { Rewards } from './components/Rewards';
-import { StatusBar } from './components/StatusBar';
-import { Reviewer } from './components/Reviewer';
-import { Goals } from './components/Goals';
-import { ActualTimeModal } from './components/ActualTimeModal';
-import { EditTaskModal } from './components/EditTaskModal';
-import { WeeklyGoalComponent } from './components/WeeklyGoal';
-import { DailyCompletionBar } from './components/DailyCompletionBar';
-import { CompletionBonusModal } from './components/CompletionBonusModal';
-import { WeeklyBriefingModal } from './components/WeeklyBriefingModal';
-import { Chatbot } from './components/Chatbot';
-import { WishList } from './components/WishList';
-import { CoreList } from './components/CoreList';
-import { CollapsibleSection } from './components/CollapsibleSection';
-import { ChatBubbleLeftRightIcon, PlusIcon, BoltIcon, FlagIcon, ChartBarSquareIcon, ListBulletIcon, CalendarDaysIcon, TrophyIcon, SparklesIcon } from './components/Icons';
-import { Task, TaskDifficulty, DailyScore, CategoryScore, SideQuest, RecurringTask, RecurrenceRule, Character, DiaryEntry, ReviewResult, Goal, AtomicHabitsSuggestions, WeeklyGoal, ObjectiveScore, Reward, PurchasedReward, Wish, CoreTask, GoalContract, AppContext } from './types';
-import { generateGogginsStory, generateGogginsDiaryFeedback, generateGogginsReflectionFeedback, generateGogginsReview, generateGogginsGoalChangeVerdict, generateAtomicHabitsSystem, generateGogginsGoalCompletionVerdict, generateLabel, analyzeTaskGoalSimilarity, generateWeeklyGoalEvaluation, generateGogginsWeeklyBriefing, generateChatResponse, generateAIAssignedTask, generateTaskFromWishList, generateTaskFromCoreList, generateBettingOdds } from './services/geminiService';
-import { DIFFICULTY_REWARDS, STREAK_MULTIPLIER_BASE, GOAL_CHANGE_COST, TIME_REWARD_PER_MINUTE, GOAL_COMPLETION_REWARD, DAILY_GRIND_COMPLETION_BONUS_EARNINGS } from './constants';
-import { isRecurringOnDate, getWeekKey, getStartOfWeek, getEndOfWeek, getDatesInRange, getLocalDateString } from './utils/dateUtils';
-
-import { BetModal } from './components/BetModal';
-import { api } from './services/api';
-
-const generateId = () => Math.random().toString(36).substring(2, 15);
-
-// FIX: Add formatCurrency helper function to resolve reference error.
-const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-    }).format(amount);
-};
-
-const initialSideQuests: SideQuest[] = [
-    { id: generateId(), description: '10 Push-ups', difficulty: TaskDifficulty.EASY, dailyGoal: 1, completions: {} },
-    { id: generateId(), description: 'Cold Shower (30s)', difficulty: TaskDifficulty.MEDIUM, dailyGoal: 1, completions: {} },
-    { id: generateId(), description: 'Read 10 pages', difficulty: TaskDifficulty.EASY, dailyGoal: 1, completions: {} },
-    { id: generateId(), description: 'Meditate for 5 mins', difficulty: TaskDifficulty.MEDIUM, dailyGoal: 1, completions: {} },
-    { id: generateId(), description: 'Plan your next day', difficulty: TaskDifficulty.MEDIUM, dailyGoal: 1, completions: {} },
-    { id: generateId(), description: 'Stretch for 10 mins', difficulty: TaskDifficulty.EASY, dailyGoal: 1, completions: {} },
-    { id: generateId(), description: 'No phone for 1 hour', difficulty: TaskDifficulty.HARD, dailyGoal: 1, completions: {} },
-];
-
-interface AppData {
-    tasks: { [key: string]: Task[] };
-    recurringTasks: RecurringTask[];
-    sideQuests: SideQuest[];
-    diaryEntries: { [key: string]: DiaryEntry };
-    character: Character;
-    userCategories: string[];
-    dailyGoal: number;
-    goals: Goal[];
-    weeklyGoals: { [key: string]: WeeklyGoal[] };
-    rewards: Reward[];
-    purchasedRewards: PurchasedReward[];
-    wishList: Wish[];
-    coreList: CoreTask[];
-    awardedDailyGrindBonus: { [date: string]: boolean };
-    weeklyBriefings: { [key: string]: string };
-    chatMessages: { sender: 'user' | 'ai'; content: string }[];
-}
-
+import React, { useState, useMemo, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LoginScreen from './components/LoginScreen';
 
+// Components
+import { Header } from './components/Header';
+import { StatusBar } from './components/StatusBar';
+import { DailyCompletionBar } from './components/DailyCompletionBar';
+import { MotivationModal } from './components/MotivationModal';
+import { CalendarContainer, CalendarViewType } from './components/CalendarView';
+import { Leaderboard, CategoryLeaderboard, ObjectiveLeaderboard } from './components/Leaderboard';
+import { Reviewer } from './components/Reviewer';
+import { TaskInput } from './components/TaskModal';
+import { Goals } from './components/Goals';
+import { WeeklyGoalComponent } from './components/WeeklyGoal';
+import { WishList } from './components/WishList';
+import { CoreList } from './components/CoreList';
+import { SideQuests } from './components/SideQuests';
+import { Rewards } from './components/Rewards';
+import { Chatbot } from './components/Chatbot';
+import { ActualTimeModal } from './components/ActualTimeModal';
+import { EditTaskModal } from './components/EditTaskModal';
+import { BetModal } from './components/BetModal';
+import { CompletionBonusModal } from './components/CompletionBonusModal';
+import { WeeklyBriefingModal } from './components/WeeklyBriefingModal';
+import { CollapsibleSection } from './components/CollapsibleSection';
+import { DashboardLayout } from './components/DashboardLayout';
+import { ChartBarSquareIcon, ListBulletIcon, PlusIcon, FlagIcon, CalendarDaysIcon, BoltIcon, SparklesIcon, TrophyIcon, ChatBubbleLeftRightIcon } from './components/Icons';
+
+// Hooks
+import { useAppData } from './hooks/useAppData';
+import { useStats } from './hooks/useStats';
+import { useTaskActions } from './hooks/useTaskActions';
+import { useGoalActions } from './hooks/useGoalActions';
+import { useAIHandlers } from './hooks/useAIHandlers';
+import { useSideQuestActions } from './hooks/useSideQuestActions';
+import { useRewardActions } from './hooks/useRewardActions';
+import { useDiaryActions } from './hooks/useDiaryActions';
+import { useReviewActions } from './hooks/useReviewActions';
+import { useBriefing } from './hooks/useBriefing';
+import { useListActions } from './hooks/useListActions';
+
+// Types & Utils
+import { Task, RecurringTask, TaskDifficulty, AtomicHabitsSuggestions, AppContext } from './types';
+import { getLocalDateString } from './utils/dateUtils';
+import { DAILY_GRIND_COMPLETION_BONUS_EARNINGS } from './constants';
+import { api } from './services/api';
+
 const MainApp: React.FC = () => {
     const { isAuthenticated, isLoading } = useAuth();
-
-    // API Key is now handled via env var in geminiService.ts
-
-    // We already have loading state inside AuthContext, but for smoother UX:
-    if (isLoading) {
-        return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">Loading...</div>;
-    }
-
-    if (!isAuthenticated) {
-        return <LoginScreen />;
-    }
-
+    if (isLoading) return <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">Loading...</div>;
+    if (!isAuthenticated) return <LoginScreen />;
     return <AppContent />;
+};
+
+const AppContent: React.FC = () => {
+    // 1. Data Layer
+    const {
+        tasks, setTasks, recurringTasks, setRecurringTasks, sideQuests, setSideQuests,
+        diaryEntries, setDiaryEntries, goals, setGoals, weeklyGoals, setWeeklyGoals,
+        rewards, setRewards, purchasedRewards, setPurchasedRewards, wishList, setWishList,
+        coreList, setCoreList, character, setCharacter, userCategories, setUserCategories,
+        dailyGoal, setDailyGoal, awardedDailyGrindBonus, setAwardedDailyGrindBonus,
+        weeklyBriefings, setWeeklyBriefings, chatMessages, setChatMessages
+    } = useAppData();
+
+    // 2. View State
+    const [selectedDate, setSelectedDate] = useState<string>(getLocalDateString());
+    const [calendarView, setCalendarView] = useState<CalendarViewType>('month');
+    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+    const [motivationalStory, setMotivationalStory] = useState('');
+    const [isLoadingStory, setIsLoadingStory] = useState(false);
+    const [taskToComplete, setTaskToComplete] = useState<{ task: Task, date: string } | null>(null);
+    const [itemToEdit, setItemToEdit] = useState<Task | RecurringTask | null>(null);
+    const [lastUpdatedDate, setLastUpdatedDate] = useState<string | null>(null);
+    const [showCompletionBonus, setShowCompletionBonus] = useState<{ title: string; xp: number; earnings: number } | null>(null);
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [taskToBetOn, setTaskToBetOn] = useState<any>(null);
+    const [atomicHabitsSuggestions, setAtomicHabitsSuggestions] = useState<AtomicHabitsSuggestions | null>(null);
+
+    // 3. Stats Layer
+    const { streak, dailyScores, totalEarnings, currentBalance, totalGP, categoryScores, objectiveScores } = useStats(
+        tasks, recurringTasks, diaryEntries, dailyGoal, character.bonuses || 0, character.spent || 0, goals
+    );
+
+    // 4. Action Handlers
+    const taskActions = useTaskActions(
+        tasks, setTasks, recurringTasks, setRecurringTasks, goals, userCategories, setUserCategories,
+        character, setCharacter, setSelectedDate, setCalendarView, setSelectedTaskId, setMotivationalStory,
+        setIsLoadingStory, setTaskToBetOn, setShowCompletionBonus, setLastUpdatedDate
+    );
+
+    const goalActions = useGoalActions(
+        goals, setGoals, weeklyGoals, setWeeklyGoals, character, setCharacter,
+        Object.entries(tasks).flatMap(([date, dayTasks]) => (dayTasks as Task[]).map(t => ({ ...t, date }))),
+        categoryScores, purchasedRewards, taskActions.getTasksForDate, setShowCompletionBonus, setAtomicHabitsSuggestions
+    );
+
+    const sideQuestActions = useSideQuestActions(sideQuests, setSideQuests, character, setCharacter);
+    const rewardActions = useRewardActions(rewards, setRewards, purchasedRewards, setPurchasedRewards, currentBalance, character, setCharacter);
+    const diaryActions = useDiaryActions(diaryEntries, setDiaryEntries, goals, taskActions.getTasksForDate, dailyScores);
+    const reviewActions = useReviewActions(goals, sideQuests, dailyScores, categoryScores, diaryEntries, taskActions.getTasksForDate);
+    const briefingActions = useBriefing(weeklyGoals, goals, weeklyBriefings, setWeeklyBriefings);
+    const listActions = useListActions(wishList, setWishList, coreList, setCoreList);
+
+    const getAppContext = (): AppContext => ({
+        currentDate: selectedDate, tasks, recurringTasks, sideQuests, diaryEntries, goals, weeklyGoals,
+        rewards, purchasedRewards, character, dailyScores, categoryScores, objectiveScores,
+        streak, dailyGoal, userCategories, wishList, coreList
+    });
+
+    const aiHandlers = useAIHandlers(
+        chatMessages, setChatMessages, wishList, setWishList, setCoreList, selectedDate,
+        taskActions.addTask, listActions.deleteWish, getAppContext
+    );
+
+    // 5. Effects
+    useEffect(() => {
+        const todayStr = getLocalDateString();
+        const lastCheck = localStorage.getItem('gogginsLastBetCheck');
+        if (lastCheck !== todayStr) {
+            taskActions.processEndOfDayBets(todayStr);
+            localStorage.setItem('gogginsLastBetCheck', todayStr);
+        }
+    }, [taskActions]);
+
+    useEffect(() => {
+        if (!lastUpdatedDate || awardedDailyGrindBonus[lastUpdatedDate]) return;
+        const checkCompletion = async () => {
+            const missionsForDate = taskActions.getTasksForDate(lastUpdatedDate).filter(t => t.category !== 'Side Quest');
+            const allMissionsComplete = missionsForDate.length > 0 && missionsForDate.every(t => t.completed);
+            const allSideQuestsComplete = sideQuests.length > 0 && sideQuests.every(q => (q.completions[lastUpdatedDate] || 0) > 0);
+
+            if (allMissionsComplete && allSideQuestsComplete) {
+                const earningsBonus = DAILY_GRIND_COMPLETION_BONUS_EARNINGS;
+                const newBonuses = (character.bonuses || 0) + earningsBonus;
+                setCharacter({ ...character, bonuses: newBonuses });
+                setAwardedDailyGrindBonus(prev => ({ ...prev, [lastUpdatedDate]: true }));
+                setShowCompletionBonus({ title: "Daily Grind Conquered!", xp: 0, earnings: earningsBonus });
+                setTimeout(() => setShowCompletionBonus(null), 5000);
+            }
+        };
+        checkCompletion();
+    }, [lastUpdatedDate, awardedDailyGrindBonus, sideQuests, taskActions, character, setCharacter, setAwardedDailyGrindBonus]);
+
+    const effectiveUserCategories = useMemo(() => {
+        const goalLabels = goals.filter(g => !g.completed && g.label).map(g => g.label!);
+        return [...new Set([...userCategories, ...goalLabels])];
+    }, [userCategories, goals]);
+
+    // 6. UI Composition
+    return (
+        <DashboardLayout
+            header={<Header totalGP={totalGP} />}
+            statusBar={<StatusBar character={character} dailyScores={dailyScores} totalEarnings={totalEarnings} totalGP={totalGP} />}
+            leftColumn={
+                <>
+                    <CollapsibleSection title="Leaderboards" icon={<ChartBarSquareIcon />} storageKey="goggins-leaderboards-section">
+                        <Leaderboard scores={dailyScores} streak={streak} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />
+                        <div className="pt-6 mt-6 border-t border-gray-700">
+                            <CategoryLeaderboard scores={categoryScores} />
+                        </div>
+                        <div className="pt-6 mt-6 border-t border-gray-700">
+                            <ObjectiveLeaderboard scores={objectiveScores} />
+                        </div>
+                    </CollapsibleSection>
+                    <CollapsibleSection title="After-Action Review" icon={<ListBulletIcon />} storageKey="goggins-review-section">
+                        <Reviewer onGenerateReview={reviewActions.handleGenerateReview} isGenerating={reviewActions.isGeneratingReview} review={reviewActions.reviewResult} />
+                    </CollapsibleSection>
+                </>
+            }
+            centerColumn={
+                <>
+                    <DailyCompletionBar completed={taskActions.getTasksForDate(selectedDate).filter(t => t.completed).length} total={taskActions.getTasksForDate(selectedDate).length} />
+                    <MotivationModal story={motivationalStory} isLoading={isLoadingStory} />
+                    <CalendarContainer
+                        view={calendarView} onViewChange={setCalendarView} selectedDate={selectedDate} onDateSelect={(d) => { setSelectedDate(d); setCalendarView('day'); }}
+                        scores={dailyScores} tasks={tasks} recurringTasks={recurringTasks} userCategories={effectiveUserCategories}
+                        onAddTask={taskActions.addTask} onToggleTask={(d, t) => t.completed ? taskActions.handleConfirmCompletion(d, { ...t, completed: false }, 0) : setTaskToComplete({ task: t, date: d })}
+                        onDeleteTask={taskActions.deleteTask} onEditTask={setItemToEdit} onSelectTask={taskActions.generateStoryForTask}
+                        onUpdateTime={taskActions.updateTaskTime} onGenerateStory={taskActions.generateStoryForTask}
+                        selectedTaskId={selectedTaskId} getTasksForDate={taskActions.getTasksForDate} diaryEntries={diaryEntries} goals={goals}
+                        onSaveInitialReflection={diaryActions.saveInitialReflection} onSaveDebrief={diaryActions.saveDebrief} isGeneratingFeedback={diaryActions.isGeneratingFeedback}
+                    />
+                </>
+            }
+            rightColumn={
+                <>
+                    <CollapsibleSection title="Add Mission" icon={<PlusIcon />} storageKey="goggins-add-mission">
+                        <TaskInput onAddTask={taskActions.addTask} userCategories={effectiveUserCategories} onAIAssignedTask={aiHandlers.handleAIAssignedTask} isAssigningTask={aiHandlers.isAssigningTask} />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Objectives" icon={<FlagIcon />} storageKey="goggins-objectives">
+                        <Goals
+                            goals={goals} onAddGoal={goalActions.addGoal} onUpdateGoal={goalActions.updateGoal} onDeleteGoal={goalActions.deleteGoal}
+                            onGoalChangeRequest={goalActions.handleGoalChangeRequest} onCompleteGoal={goalActions.completeGoal}
+                            onUpdateGoalContract={goalActions.updateGoalContract} currentBalance={currentBalance}
+                            atomicHabitsSuggestions={atomicHabitsSuggestions} onCloseSuggestions={() => setAtomicHabitsSuggestions(null)}
+                        />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Weekly Objectives" icon={<CalendarDaysIcon />} storageKey="goggins-weekly-objectives-section">
+                        <WeeklyGoalComponent
+                            weeklyGoals={weeklyGoals} goals={goals} onAddGoal={goalActions.addWeeklyGoal} onUpdateGoal={goalActions.updateWeeklyGoal}
+                            onDeleteGoal={goalActions.deleteWeeklyGoal} onEvaluateGoal={goalActions.evaluateWeeklyGoal}
+                            onUpdateWeeklyGoalContract={goalActions.updateWeeklyGoalContract} isBriefingLoading={briefingActions.isGeneratingBriefing}
+                        />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Forge Missions" icon={<BoltIcon />} storageKey="goggins-forge-missions">
+                        <WishList
+                            wishList={wishList} onAddWish={listActions.addWish} onUpdateWish={listActions.updateWish} onDeleteWish={listActions.deleteWish}
+                            onGogginsWishSelection={aiHandlers.handleGogginsWishSelection} isSelectingWish={aiHandlers.isSelectingWish} onUpdateWishContract={listActions.updateWishContract}
+                        />
+                        <div className="pt-6 mt-6 border-t border-gray-700">
+                            <CoreList
+                                coreList={coreList} onAdd={listActions.addCoreTask} onUpdate={listActions.updateCoreTask} onDelete={listActions.deleteCoreTask}
+                                onForge={aiHandlers.handleGogginsCoreSelection} isForging={aiHandlers.isForgingCoreMission} onUpdateCoreTaskContract={listActions.updateCoreTaskContract}
+                            />
+                        </div>
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Side Quests" icon={<SparklesIcon />} storageKey="goggins-side-quests-section">
+                        <SideQuests sideQuests={sideQuests} onCompleteSideQuest={sideQuestActions.completeSideQuest} onAddSideQuest={sideQuestActions.addSideQuest} onDeleteSideQuest={sideQuestActions.deleteSideQuest} onUpdateSideQuest={sideQuestActions.updateSideQuest} />
+                    </CollapsibleSection>
+                    <CollapsibleSection title="Rewards Locker" icon={<TrophyIcon />} storageKey="goggins-rewards-section">
+                        <Rewards rewards={rewards} purchasedRewards={purchasedRewards} currentBalance={currentBalance} onAddReward={rewardActions.addReward} onDeleteReward={rewardActions.deleteReward} onPurchaseReward={rewardActions.purchaseReward} />
+                    </CollapsibleSection>
+                </>
+            }
+            modals={
+                <>
+                    {taskToComplete && <ActualTimeModal task={taskToComplete.task} onConfirm={(time) => taskActions.handleConfirmCompletion(taskToComplete.date, taskToComplete.task, time)} onCancel={() => setTaskToComplete(null)} />}
+                    {itemToEdit && <EditTaskModal item={itemToEdit} onUpdate={taskActions.updateTask} onCancel={() => setItemToEdit(null)} userCategories={effectiveUserCategories} />}
+                    {showCompletionBonus && <CompletionBonusModal bonus={showCompletionBonus} />}
+                    {briefingActions.briefingToShow && <WeeklyBriefingModal briefing={briefingActions.briefingToShow} onClose={() => briefingActions.setBriefingToShow(null)} />}
+                    {taskToBetOn && <BetModal task={taskToBetOn} currentBalance={currentBalance} onConfirmBet={taskActions.handleConfirmBet} onNoBet={() => taskActions.handleNoBet(taskToBetOn)} />}
+                </>
+            }
+            chatbot={
+                <>
+                    <button onClick={() => setIsChatOpen(true)} className="fixed bottom-4 left-4 bg-orange-600 hover:bg-orange-700 text-white p-4 rounded-full shadow-lg z-40" aria-label="Open AI Tactical Advisor Chat">
+                        <ChatBubbleLeftRightIcon className="w-8 h-8" />
+                    </button>
+                    <Chatbot isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} messages={chatMessages} onSendMessage={aiHandlers.handleSendMessage} isLoading={aiHandlers.isChatLoading} />
+                </>
+            }
+        />
+    );
 };
 
 const App: React.FC = () => {
@@ -94,1552 +251,6 @@ const App: React.FC = () => {
         <AuthProvider>
             <MainApp />
         </AuthProvider>
-    );
-};
-
-// Renamed original App to AppContent to keep logic clean without massive indentation changes if possible,
-// using a separate component is cleaner for the Auth wrapper.
-const AppContent: React.FC = () => {
-
-    // --- State Management (Replaced useLocalStorage with individual states) ---
-    const [tasks, setTasks] = useState<{ [key: string]: Task[] }>({});
-    const [recurringTasks, setRecurringTasks] = useState<RecurringTask[]>([]);
-    const [sideQuests, setSideQuests] = useState<SideQuest[]>(initialSideQuests);
-    const [diaryEntries, setDiaryEntries] = useState<{ [key: string]: DiaryEntry }>({});
-    const [goals, setGoals] = useState<Goal[]>([]);
-    // FIX: Initialize weeklyGoals as empty object to match type { [key: string]: WeeklyGoal[] }
-    // The previous initialization might have been implicit or relied on empty array which is invalid for the type.
-    const [weeklyGoals, setWeeklyGoals] = useState<{ [key: string]: WeeklyGoal[] }>({});
-    const [rewards, setRewards] = useState<Reward[]>([]);
-    const [purchasedRewards, setPurchasedRewards] = useState<PurchasedReward[]>([]);
-    const [wishList, setWishList] = useState<Wish[]>([]);
-    const [coreList, setCoreList] = useState<CoreTask[]>([]);
-    const [character, setCharacter] = useState<Character>({ spent: 0, bonuses: 0 });
-    const [userCategories, setUserCategories] = useState<string[]>(['Physical Training', 'Mental Fortitude', 'Discipline', 'Uncomfortable Zone', 'Side Quest']);
-    const [dailyGoal, setDailyGoal] = useState<number>(1);
-    const [awardedDailyGrindBonus, setAwardedDailyGrindBonus] = useState<{ [date: string]: boolean }>({});
-    const [weeklyBriefings, setWeeklyBriefings] = useState<{ [key: string]: string }>({});
-    const [chatMessages, setChatMessages] = useState<{ sender: 'user' | 'ai'; content: string }[]>([{ sender: 'ai', content: "This is the command center. Report in. What do you need? Don't waste my time." }]);
-
-    // --- Data Loading ---
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                const [
-                    fetchedTasks, fetchedRecurring, fetchedGoals,
-                    fetchedSideQuests, fetchedRewards, fetchedPurchased,
-                    fetchedWishes, fetchedCore, fetchedRecs, fetchedEntries, fetchedWeeklyGoals, fetchedCharacter
-                ] = await Promise.all([
-                    api.tasks.list(),
-                    api.recurringTasks.list(),
-                    api.goals.list(),
-                    api.sideQuests.list(),
-                    api.rewards.list(),
-                    api.purchasedRewards.list(),
-                    api.wishList.list(),
-                    api.coreList.list(),
-                    Promise.resolve([]), // Placeholders if needed
-                    api.diaryEntries.list(),
-                    api.weeklyGoals.list(),
-                    api.character.get()
-                ]);
-
-                // Transform Tasks List -> Map
-                const taskMap: { [key: string]: Task[] } = {};
-                fetchedTasks.forEach(t => {
-                    if (!taskMap[t.date]) taskMap[t.date] = [];
-                    taskMap[t.date].push(t);
-                });
-                setTasks(taskMap);
-
-                setRecurringTasks(fetchedRecurring);
-                setGoals(fetchedGoals);
-
-                if (fetchedSideQuests.length > 0) {
-                    setSideQuests(fetchedSideQuests);
-                } else {
-                    // Seed initial side quests if backend is empty
-                    // This ensures they exist in the DB so updates (PUT) don't fail with 404
-                    console.log("Seeding initial side quests...");
-                    try {
-                        // IDs are stable within this session (module scope)
-                        const savedQuests = await Promise.all(initialSideQuests.map(q => api.sideQuests.create(q)));
-                        setSideQuests(savedQuests);
-                    } catch (e) {
-                        console.error("Failed to seed side quests", e);
-                        // Fallback to local, but they won't trigger valid API updates until recreated
-                        setSideQuests(initialSideQuests);
-                    }
-                }
-
-                setRewards(fetchedRewards);
-                setPurchasedRewards(fetchedPurchased);
-                setWishList(fetchedWishes);
-                setCoreList(fetchedCore);
-
-                // Transform Diary -> Map
-                const diaryMap: { [key: string]: DiaryEntry } = {};
-                fetchedEntries.forEach(e => diaryMap[e.date] = e);
-                setDiaryEntries(diaryMap);
-
-                // Transform Weekly Goals -> Map
-                // Assuming backend returns flat list. Need to group by week? 
-                // Or maybe backend should support `?week=`? 
-                // For now, let's assume we derive the week key from the targetDate.
-                const wgMap: { [key: string]: WeeklyGoal[] } = {};
-                fetchedWeeklyGoals.forEach(g => {
-                    // Need to calculate week key from date.
-                    const d = new Date(g.targetDate);
-                    const key = getWeekKey(d);
-                    if (!wgMap[key]) wgMap[key] = [];
-                    wgMap[key].push(g);
-                });
-                setWeeklyGoals(wgMap);
-
-                if (fetchedCharacter) setCharacter(fetchedCharacter);
-
-            } catch (e) {
-                console.error("Failed to load initial data", e);
-            }
-        };
-        loadData();
-    }, []);
-
-    // Local UI state
-    const [motivationalStory, setMotivationalStory] = useState('');
-    const [isLoadingStory, setIsLoadingStory] = useState(false);
-    const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
-    const [selectedDate, setSelectedDate] = useState<string>(getLocalDateString());
-    const [calendarView, setCalendarView] = useState<CalendarViewType>('month');
-    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-    const [reviewResult, setReviewResult] = useState<ReviewResult | null>(null);
-    const [isGeneratingReview, setIsGeneratingReview] = useState(false);
-    const [atomicHabitsSuggestions, setAtomicHabitsSuggestions] = useState<AtomicHabitsSuggestions | null>(null);
-    const [taskToComplete, setTaskToComplete] = useState<{ task: Task, date: string } | null>(null);
-    const [itemToEdit, setItemToEdit] = useState<Task | RecurringTask | null>(null);
-    const [lastUpdatedDate, setLastUpdatedDate] = useState<string | null>(null);
-    const [showCompletionBonus, setShowCompletionBonus] = useState<{ title: string; xp: number; earnings: number } | null>(null);
-    const [briefingToShow, setBriefingToShow] = useState<string | null>(null);
-    const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
-    const [isChatOpen, setIsChatOpen] = useState(false);
-    const [isChatLoading, setIsChatLoading] = useState(false);
-    const [isAssigningTask, setIsAssigningTask] = useState(false);
-    const [isSelectingWish, setIsSelectingWish] = useState(false);
-    const [isForgingCoreMission, setIsForgingCoreMission] = useState(false);
-    const [taskToBetOn, setTaskToBetOn] = useState<(Task & { betMultiplier: number; betRationale: string; recurrenceRule: 'None' | RecurrenceRule; }) | null>(null);
-
-    const effectiveUserCategories = useMemo(() => {
-        const goalLabels = goals
-            .filter(g => !g.completed && g.label)
-            .map(g => g.label!);
-        // FIX: The `combined` variable was not defined. It should be a combination of userCategories and goalLabels.
-        const combined = [...userCategories, ...goalLabels];
-        return [...new Set(combined)];
-    }, [userCategories, goals]);
-
-    const handleDateSelect = (date: string) => {
-        setSelectedDate(date);
-        setCalendarView('day');
-    };
-
-    const getTasksForDate = useCallback((dateStr: string): Task[] => {
-        const dayTasks = tasks[dateStr] || [];
-
-        const recurringInstances: Task[] = recurringTasks
-            .filter(rt => isRecurringOnDate(rt, dateStr))
-            .map(rt => ({
-                ...rt,
-                id: `${rt.id}_${dateStr}`,
-                date: dateStr,
-                recurringMasterId: rt.id,
-                completed: rt.completions[dateStr]?.completed || false,
-                actualTime: rt.completions[dateStr]?.actualTime || null,
-                time: rt.completions[dateStr]?.time ?? rt.time,
-                betPlaced: rt.completions[dateStr]?.betPlaced,
-                betAmount: rt.completions[dateStr]?.betAmount,
-                betMultiplier: rt.completions[dateStr]?.betMultiplier,
-                betWon: rt.completions[dateStr]?.betWon,
-            }));
-
-        return [...dayTasks, ...recurringInstances];
-    }, [tasks, recurringTasks]);
-
-    // Daily Grind Bonus Check
-    useEffect(() => {
-        if (!lastUpdatedDate || awardedDailyGrindBonus[lastUpdatedDate]) {
-            return;
-        }
-
-        const checkCompletion = async () => {
-            const missionsForDate = getTasksForDate(lastUpdatedDate).filter(t => t.category !== 'Side Quest');
-            const allMissionsComplete = missionsForDate.length > 0 && missionsForDate.every(t => t.completed);
-            const allSideQuestsComplete = sideQuests.length > 0 && sideQuests.every(q => (q.completions[lastUpdatedDate] || 0) > 0);
-
-            if (allMissionsComplete && allSideQuestsComplete) {
-                const earningsBonus = DAILY_GRIND_COMPLETION_BONUS_EARNINGS;
-                const newBonuses = (character.bonuses || 0) + earningsBonus;
-                const newAwarded = { ...awardedDailyGrindBonus, [lastUpdatedDate]: true };
-
-                setCharacter({ ...character, bonuses: newBonuses });
-                setAwardedDailyGrindBonus(newAwarded);
-
-                setShowCompletionBonus({ title: "Daily Grind Conquered!", xp: 0, earnings: earningsBonus });
-                setTimeout(() => setShowCompletionBonus(null), 5000);
-            }
-        };
-        checkCompletion();
-
-    }, [lastUpdatedDate, awardedDailyGrindBonus, character, getTasksForDate, setAwardedDailyGrindBonus, setCharacter, sideQuests]);
-
-    const allTasks = useMemo(() => Object.values(tasks).flat(), [tasks]);
-
-    const streak = useMemo(() => {
-        const scoresMap = new Map<string, number>();
-        const allCompletedTasks: (Task & { date: string })[] = [];
-        Object.entries(tasks).forEach(([date, dayTasks]) => {
-            allCompletedTasks.push(...dayTasks.filter(t => t.completed).map(t => ({ ...t, date })));
-        });
-        recurringTasks.forEach(rt => {
-            Object.entries(rt.completions).forEach(([date, completion]) => {
-                if (completion.completed) {
-                    allCompletedTasks.push({ ...rt, id: `${rt.id}_${date}`, date, completed: true, actualTime: completion.actualTime });
-                }
-            });
-        });
-        allCompletedTasks.forEach(task => {
-            const baseReward = DIFFICULTY_REWARDS[task.difficulty] || 0;
-            const timeReward = (task.actualTime || 0) * TIME_REWARD_PER_MINUTE;
-            const goalAlignmentMultiplier = (task.goalAlignment || 3) / 5;
-            const finalReward = (baseReward + timeReward) * goalAlignmentMultiplier;
-            scoresMap.set(task.date, (scoresMap.get(task.date) || 0) + finalReward);
-        });
-        const scoresMeetingGoal = new Set<string>();
-        for (const [date, earnings] of scoresMap.entries()) {
-            if (earnings >= dailyGoal) scoresMeetingGoal.add(date);
-        }
-        if (scoresMeetingGoal.size === 0 || dailyGoal <= 0) return 0;
-        let currentStreak = 0;
-        const dateIterator = new Date();
-        if (!scoresMeetingGoal.has(getLocalDateString(dateIterator))) {
-            dateIterator.setDate(dateIterator.getDate() - 1);
-        }
-        for (let i = 0; i < 3650; i++) {
-            const dateStr = getLocalDateString(dateIterator);
-            if (scoresMeetingGoal.has(dateStr)) {
-                currentStreak++;
-                dateIterator.setDate(dateIterator.getDate() - 1);
-            } else {
-                break;
-            }
-        }
-        return currentStreak;
-    }, [tasks, recurringTasks, dailyGoal]);
-
-    const streakMultiplier = useMemo(() => 1 + streak * STREAK_MULTIPLIER_BASE, [streak]);
-
-    const dailyScores = useMemo<DailyScore[]>(() => {
-        const earningsByDate: { [date: string]: { earnings: number, tasksCompleted: number } } = {};
-        const applyReward = (task: Task, date: string) => {
-            const baseReward = DIFFICULTY_REWARDS[task.difficulty] || 0;
-            const timeReward = (task.actualTime || 0) * TIME_REWARD_PER_MINUTE;
-            const goalAlignmentMultiplier = (task.goalAlignment || 3) / 5;
-            const finalReward = (baseReward + timeReward) * streakMultiplier * goalAlignmentMultiplier;
-            if (!earningsByDate[date]) {
-                earningsByDate[date] = { earnings: 0, tasksCompleted: 0 };
-            }
-            earningsByDate[date].earnings += finalReward;
-            earningsByDate[date].tasksCompleted += 1;
-        };
-        Object.entries(tasks).forEach(([date, dayTasks]) => {
-            dayTasks.filter(t => t.completed).forEach(t => applyReward(t, date));
-        });
-        recurringTasks.forEach(rt => {
-            Object.entries(rt.completions).forEach(([date, completion]) => {
-                if (completion.completed) {
-                    const taskInstance: Task = { ...rt, id: `${rt.id}_${date}`, date, completed: true, actualTime: completion.actualTime };
-                    applyReward(taskInstance, date);
-                }
-            });
-        });
-        return Object.entries(earningsByDate).map(([date, data]) => ({ date, ...data, grade: diaryEntries[date]?.grade }));
-    }, [tasks, recurringTasks, streakMultiplier, diaryEntries]);
-
-    const totalTaskEarnings = useMemo(() => dailyScores.reduce((sum, score) => sum + score.earnings, 0), [dailyScores]);
-    const totalEarnings = useMemo(() => totalTaskEarnings + (character.bonuses || 0), [totalTaskEarnings, character.bonuses]);
-    const currentBalance = useMemo(() => totalEarnings - (character.spent || 0), [totalEarnings, character.spent]);
-    const totalGP = useMemo(() => totalEarnings * 100, [totalEarnings]);
-
-    // Effect for initial balance and daily bet processing
-    useEffect(() => {
-        const todayStr = getLocalDateString();
-        const lastCheck = localStorage.getItem('gogginsLastBetCheck');
-
-        if (lastCheck !== todayStr) {
-            console.log('Running end-of-day bet processing...');
-            processEndOfDayBets(todayStr);
-            localStorage.setItem('gogginsLastBetCheck', todayStr);
-        }
-    }, []); // Run once on app load
-
-    useEffect(() => {
-        const isNewUser = Object.keys(tasks).length === 0 && recurringTasks.length === 0 && (character.spent || 0) === 0 && (character.bonuses || 0) === 0;
-        if (isNewUser) {
-            setCharacter(c => ({ ...c, bonuses: 5 }));
-            setShowCompletionBonus({ title: "Account Funded", earnings: 5, xp: 0 });
-            setTimeout(() => setShowCompletionBonus(null), 5000);
-        }
-    }, []); // Runs only once on initial mount
-
-    const processEndOfDayBets = (today: string) => {
-        let lostAmount = 0;
-        const updatedTasks = { ...tasks };
-        const updatedRecurringTasks = [...recurringTasks];
-        let tasksChanged = false;
-        let recurringChanged = false;
-
-        Object.keys(updatedTasks).forEach(date => {
-            if (date < today) {
-                updatedTasks[date] = updatedTasks[date].map(task => {
-                    if (task.betPlaced && !task.completed && typeof task.betWon === 'undefined') {
-                        lostAmount += task.betAmount || 0;
-                        tasksChanged = true;
-                        return { ...task, betWon: false };
-                    }
-                    return task;
-                });
-            }
-        });
-
-        updatedRecurringTasks.forEach((rt, index) => {
-            const updatedCompletions = { ...rt.completions };
-            let completionsChanged = false;
-            Object.keys(updatedCompletions).forEach(date => {
-                if (date < today) {
-                    const completion = updatedCompletions[date];
-                    if (completion.betPlaced && !completion.completed && typeof completion.betWon === 'undefined') {
-                        lostAmount += completion.betAmount || 0;
-                        updatedCompletions[date] = { ...completion, betWon: false };
-                        completionsChanged = true;
-                    }
-                }
-            });
-            if (completionsChanged) {
-                recurringChanged = true;
-                updatedRecurringTasks[index] = { ...rt, completions: updatedCompletions };
-            }
-        });
-
-        if (lostAmount > 0) {
-            if (tasksChanged) setTasks(updatedTasks);
-            if (recurringChanged) setRecurringTasks(updatedRecurringTasks);
-            setCharacter(c => ({ ...c, spent: (c.spent || 0) + lostAmount }));
-            console.log(`Processed bet losses. Total lost: ${lostAmount}`);
-        }
-    };
-
-    const categoryScores = useMemo<CategoryScore[]>(() => {
-        const stats: { [key: string]: { earnings: number; tasksCompleted: number } } = {};
-        const processTask = (task: Task & { date: string }) => {
-            if (!task.completed) return;
-            const baseReward = DIFFICULTY_REWARDS[task.difficulty] || 0;
-            const timeReward = (task.actualTime || 0) * TIME_REWARD_PER_MINUTE;
-            const goalAlignmentMultiplier = (task.goalAlignment || 3) / 5;
-            const finalReward = (baseReward + timeReward) * streakMultiplier * goalAlignmentMultiplier;
-            if (!stats[task.category]) stats[task.category] = { earnings: 0, tasksCompleted: 0 };
-            stats[task.category].earnings += finalReward;
-            stats[task.category].tasksCompleted += 1;
-        };
-        Object.values(tasks).flat().forEach(t => processTask({ ...t, date: Object.keys(tasks).find(d => tasks[d].includes(t))! }));
-        recurringTasks.forEach(rt => {
-            Object.entries(rt.completions).forEach(([date, completion]) => {
-                if (completion.completed) processTask({ ...rt, id: `${rt.id}_${date}`, date, completed: true, actualTime: completion.actualTime });
-            });
-        });
-        return Object.entries(stats).map(([category, data]) => ({ category, ...data }));
-    }, [tasks, recurringTasks, streakMultiplier]);
-
-    const objectiveScores = useMemo<ObjectiveScore[]>(() => {
-        const stats: { [goalId: string]: { earnings: number; tasksCompleted: number } } = {};
-        const activeGoalIds = new Set(goals.filter(g => !g.completed).map(g => g.id));
-        const processTask = (task: Task & { date: string }) => {
-            if (!task.completed || !task.alignedGoalId || !activeGoalIds.has(task.alignedGoalId)) return;
-            const baseReward = DIFFICULTY_REWARDS[task.difficulty] || 0;
-            const timeReward = (task.actualTime || 0) * TIME_REWARD_PER_MINUTE;
-            const goalAlignmentMultiplier = (task.goalAlignment || 3) / 5;
-            const finalReward = (baseReward + timeReward) * streakMultiplier * goalAlignmentMultiplier;
-            if (!stats[task.alignedGoalId]) stats[task.alignedGoalId] = { earnings: 0, tasksCompleted: 0 };
-            stats[task.alignedGoalId].earnings += finalReward;
-            stats[task.alignedGoalId].tasksCompleted += 1;
-        };
-        Object.values(tasks).flat().forEach(t => processTask({ ...t, date: Object.keys(tasks).find(d => tasks[d].includes(t))! }));
-        recurringTasks.forEach(rt => {
-            Object.entries(rt.completions).forEach(([date, completion]) => {
-                if (completion.completed) processTask({ ...rt, id: `${rt.id}_${date}`, date, completed: true, actualTime: completion.actualTime, alignedGoalId: rt.alignedGoalId });
-            });
-        });
-        return Object.entries(stats).map(([goalId, data]) => {
-            const goal = goals.find(g => g.id === goalId);
-            return { goalId, goalDescription: goal?.description || 'Unknown Goal', goalLabel: goal?.label, ...data };
-        });
-    }, [tasks, recurringTasks, goals, streakMultiplier]);
-
-    const _commitTask = async (taskToCommit: Task & { recurrenceRule: 'None' | RecurrenceRule }) => {
-        setSelectedDate(taskToCommit.date);
-        setCalendarView('day');
-
-        const activeGoals = goals.filter(g => !g.completed);
-        const matchingGoal = activeGoals.find(g => g.label?.toLowerCase() === taskToCommit.category.toLowerCase());
-
-        let goalAlignment: number | undefined = 3;
-        let alignedGoalId: string | undefined = undefined;
-        let justification = taskToCommit.justification;
-
-        if (matchingGoal) {
-            alignedGoalId = matchingGoal.id;
-            goalAlignment = 5;
-            if (!justification) {
-                justification = `Directly assigned to objective: ${matchingGoal.label}.`;
-            }
-        } else if (!justification) {
-            justification = "Manually categorized.";
-        }
-
-        let createdTask: Task | RecurringTask;
-
-        if (taskToCommit.recurrenceRule === 'None') {
-            const { recurrenceRule, ...rest } = taskToCommit;
-            // Optimistic ID, will be replaced by API result
-            const tempId = generateId();
-            const newTask: Task = { ...rest, id: tempId, completed: false, actualTime: undefined, goalAlignment, alignedGoalId, justification };
-
-            // Call API
-            try {
-                const savedTask = await api.tasks.create(newTask);
-                createdTask = savedTask;
-
-                setTasks(prevTasks => ({
-                    ...prevTasks,
-                    [savedTask.date]: [...(prevTasks[savedTask.date] || []), savedTask]
-                }));
-            } catch (error) {
-                console.error("Failed to create task", error);
-                return;
-            }
-
-        } else {
-            const { date, recurrenceRule, ...rest } = taskToCommit;
-            const newRecurringTask: RecurringTask = { ...rest, id: generateId(), recurrenceRule, startDate: date, completions: {}, goalAlignment, alignedGoalId, justification };
-            if (taskToCommit.betPlaced) {
-                newRecurringTask.completions[date] = {
-                    completed: false,
-                    actualTime: null,
-                    betPlaced: true,
-                    betAmount: taskToCommit.betAmount,
-                    betMultiplier: taskToCommit.betMultiplier,
-                };
-            }
-
-            try {
-                const savedRecurring = await api.recurringTasks.create(newRecurringTask);
-                createdTask = savedRecurring;
-                setRecurringTasks(prev => [...prev, savedRecurring]);
-            } catch (error) {
-                console.error("Failed to create recurring task", error);
-                return;
-            }
-        }
-
-        if (!userCategories.find(c => c.toLowerCase() === taskToCommit.category.toLowerCase())) {
-            setUserCategories(prev => [...prev, taskToCommit.category]);
-            // Note: User categories are implied locally for now, backend doesn't explicit save them unless usage implies.
-        }
-
-        // --- Story Generation ---
-        // Backend doesn't auto-generate story on create. We do it here.
-        // ID is now from backend.
-
-        // --- Story Generation ---
-        // Backend doesn't auto-generate story on create. We do it here.
-        // ID is now from backend.
-
-        const newTaskId = createdTask.id; // Use backend ID
-
-        setSelectedTaskId(newTaskId);
-        setIsLoadingStory(true);
-        setMotivationalStory('');
-
-        try {
-            const story = await generateGogginsStory({
-                description: createdTask.description,
-                difficulty: createdTask.difficulty,
-                category: createdTask.category,
-                estimatedTime: createdTask.estimatedTime
-            }, goals, taskToCommit.justification);
-
-            // Update task with story
-            if ('recurrenceRule' in createdTask) {
-                const updated = { ...createdTask, story };
-                await api.recurringTasks.update(updated as RecurringTask); // Sync to backend
-                setRecurringTasks(prev => prev.map(rt => rt.id === updated.id ? updated : rt));
-            } else {
-                const updated = { ...createdTask, story };
-                await api.tasks.update(updated as Task); // Sync to backend
-                setTasks(prev => {
-                    const newTasks = { ...prev };
-                    const taskDate = (updated as Task).date;
-                    if (newTasks[taskDate]) {
-                        newTasks[taskDate] = newTasks[taskDate].map(t => t.id === updated.id ? updated : t);
-                    }
-                    return newTasks;
-                });
-            }
-
-            setMotivationalStory(story);
-        } catch (e) {
-            console.error("Failed to generate story or update task", e);
-            setMotivationalStory("Stay hard. (System Error)");
-        } finally {
-            setIsLoadingStory(false);
-        }
-    };
-
-    const addTask = async (taskData: { description: string, difficulty: TaskDifficulty, date: string, category: string, recurrenceRule: 'None' | RecurrenceRule, estimatedTime: number, time?: string, justification?: string }) => {
-        const bettingContext = {
-            goals: goals.filter(g => !g.completed),
-            tasks,
-            recurringTasks
-        };
-
-        const { multiplier, rationale } = await generateBettingOdds({
-            description: taskData.description,
-            difficulty: taskData.difficulty,
-            category: taskData.category,
-            estimatedTime: taskData.estimatedTime,
-        }, bettingContext);
-
-        const tempTask: Task & { betMultiplier: number; betRationale: string; recurrenceRule: 'None' | RecurrenceRule; } = {
-            id: `temp_${generateId()}`,
-            ...taskData,
-            completed: false,
-            actualTime: null,
-            betMultiplier: multiplier,
-            betRationale: rationale,
-        };
-
-        setTaskToBetOn(tempTask);
-    };
-
-    const handleConfirmBet = (task: Task, betAmount: number) => {
-        const finalTask = {
-            ...task,
-            betPlaced: true,
-            betAmount,
-            betMultiplier: (task as any).betMultiplier,
-            recurrenceRule: recurringTasks.find(rt => rt.id === task.recurringMasterId)?.recurrenceRule || (task as any).recurrenceRule || 'None'
-        };
-        _commitTask(finalTask);
-        setTaskToBetOn(null);
-    };
-
-    const handleNoBet = () => {
-        if (taskToBetOn) {
-            const finalTask = {
-                ...taskToBetOn,
-                betPlaced: false,
-                recurrenceRule: recurringTasks.find(rt => rt.id === taskToBetOn.recurringMasterId)?.recurrenceRule || (taskToBetOn as any).recurrenceRule || 'None'
-            };
-            _commitTask(finalTask as any);
-        }
-        setTaskToBetOn(null);
-    };
-
-    // FIX: toggleTask and handleConfirmCompletion need to call API updates.
-
-    // We skipped toggleTask in this chunk, it is line 562.
-    // The chunk ends at line 645 (deleteTask).
-
-    const deleteTask = async (date: string, taskToDelete: Task) => {
-        if (taskToDelete.recurringMasterId) {
-            if (window.confirm("This is a recurring mission. Deleting it will remove all future occurrences. Are you sure?")) {
-                try {
-                    await api.recurringTasks.delete(taskToDelete.recurringMasterId);
-                    setRecurringTasks(recurringTasks.filter(rt => rt.id !== taskToDelete.recurringMasterId));
-                } catch (e) {
-                    console.error("Failed to delete recurring task", e);
-                }
-            }
-        } else {
-            try {
-                await api.tasks.delete(taskToDelete.id);
-                setTasks(prevTasks => {
-                    const newTasks = { ...prevTasks };
-                    if (newTasks[date]) {
-                        newTasks[date] = newTasks[date].filter(t => t.id !== taskToDelete.id);
-                        if (newTasks[date].length === 0) {
-                            delete newTasks[date];
-                        }
-                    }
-                    return newTasks;
-                });
-            } catch (e) {
-                console.error("Failed to delete task", e);
-            }
-        }
-    };
-
-    const updateTask = async (updatedItem: Task | RecurringTask, originalItem: Task | RecurringTask) => {
-        if ('recurrenceRule' in updatedItem && 'recurrenceRule' in originalItem) { // It's a RecurringTask
-            try {
-                const updated = await api.recurringTasks.update(updatedItem as RecurringTask);
-                setRecurringTasks(prev => prev.map(rt => rt.id === originalItem.id ? updated : rt));
-            } catch (e) {
-                console.error("Failed to update recurring task", e);
-            }
-        } else if (!('recurrenceRule' in updatedItem) && !('recurrenceRule' in originalItem)) { // It's a Task
-            const updatedTask = updatedItem as Task;
-            const originalTask = originalItem as Task;
-
-            try {
-                const saved = await api.tasks.update(updatedTask);
-                setTasks(prev => {
-                    const newTasks = { ...prev };
-                    if (newTasks[originalTask.date]) {
-                        // If date changed, remove from old
-                        if (originalTask.date !== saved.date) {
-                            newTasks[originalTask.date] = newTasks[originalTask.date].filter(t => t.id !== originalTask.id);
-                            if (newTasks[originalTask.date].length === 0) delete newTasks[originalTask.date];
-                        }
-                    }
-                    if (!newTasks[saved.date]) {
-                        newTasks[saved.date] = [];
-                    }
-
-                    // If date same, replace. If diff, push.
-                    if (originalTask.date === saved.date) {
-                        newTasks[saved.date] = newTasks[saved.date].map(t => t.id === saved.id ? saved : t);
-                    } else {
-                        newTasks[saved.date].push(saved);
-                    }
-
-                    return newTasks;
-                });
-            } catch (e) {
-                console.error("Failed to update task", e);
-            }
-        }
-        setItemToEdit(null);
-    };
-
-    const selectTask = (task: Task) => {
-        if (selectedTaskId === task.id) {
-            setSelectedTaskId(null);
-            setMotivationalStory('');
-        } else {
-            setSelectedTaskId(task.id);
-            const masterTask = task.recurringMasterId ? recurringTasks.find(rt => rt.id === task.recurringMasterId) : task;
-            setMotivationalStory(masterTask?.story || '');
-        }
-    };
-
-    const updateTaskTime = async (date: string, taskToUpdate: Task, time: string | null) => {
-        try {
-            if (taskToUpdate.recurringMasterId) {
-                const masterTask = recurringTasks.find(rt => rt.id === taskToUpdate.recurringMasterId);
-                if (masterTask) {
-                    const newCompletions = { ...masterTask.completions };
-                    const completionData = newCompletions[date] || { completed: false, actualTime: null };
-                    newCompletions[date] = { ...completionData, time: time ?? undefined };
-                    const updated = { ...masterTask, completions: newCompletions };
-                    await api.recurringTasks.update(updated);
-                    setRecurringTasks(prev => prev.map(rt => rt.id === updated.id ? updated : rt));
-                }
-            } else {
-                const updatedTask = { ...taskToUpdate, time: time ?? undefined };
-                await api.tasks.update(updatedTask as Task);
-                setTasks(prev => {
-                    const newTasks = { ...prev };
-                    if (newTasks[date]) {
-                        newTasks[date] = newTasks[date].map(t => t.id === taskToUpdate.id ? updatedTask as Task : t);
-                    }
-                    return newTasks;
-                });
-            }
-        } catch (e) {
-            console.error("Failed to update task time", e);
-        }
-    };
-
-    const toggleTask = async (date: string, taskToToggle: Task) => {
-        if (taskToToggle.completed) {
-            // Un-complete the task
-            try {
-                if (taskToToggle.recurringMasterId) {
-                    const masterTask = recurringTasks.find(rt => rt.id === taskToToggle.recurringMasterId);
-                    if (masterTask) {
-                        const newCompletions = { ...masterTask.completions, [date]: { ...masterTask.completions[date], completed: false, actualTime: null } };
-                        const updated = { ...masterTask, completions: newCompletions };
-                        await api.recurringTasks.update(updated);
-                        setRecurringTasks(prev => prev.map(rt => rt.id === updated.id ? updated : rt));
-                    }
-                } else {
-                    const updatedTask = { ...taskToToggle, completed: false, actualTime: null };
-                    await api.tasks.update(updatedTask as Task);
-                    setTasks(prevTasks => {
-                        const newTasks = { ...prevTasks };
-                        newTasks[date] = newTasks[date].map(t => t.id === taskToToggle.id ? updatedTask as Task : t);
-                        return newTasks;
-                    });
-                }
-            } catch (e) {
-                console.error("Failed to toggle task", e);
-            }
-        } else {
-            setTaskToComplete({ task: taskToToggle, date });
-        }
-    };
-
-    const handleConfirmCompletion = async (date: string, task: Task, actualTime: number) => {
-        let betWinnings = 0;
-        let charUpdates = { ...character };
-
-        if (task.betPlaced && !task.completed) {
-            const winnings = (task.betAmount || 0) * (task.betMultiplier || 1);
-            betWinnings = (task.betAmount || 0) + winnings; // Return stake + winnings
-            charUpdates = { ...charUpdates, bonuses: (charUpdates.bonuses || 0) + betWinnings };
-            if (betWinnings > 0) {
-                setShowCompletionBonus({ title: "Bet Won!", earnings: winnings, xp: 0 });
-                setTimeout(() => setShowCompletionBonus(null), 5000);
-            }
-        }
-
-        // Sync Character Changes if any
-        if (betWinnings > 0) {
-            try {
-                await api.character.update(charUpdates);
-                setCharacter(charUpdates);
-            } catch (e) { console.error("Failed to update character", e); }
-        }
-
-        try {
-            if (task.recurringMasterId) {
-                // We need to fetch the recurring task to get latest state or use local
-                const rtIndex = recurringTasks.findIndex(rt => rt.id === task.recurringMasterId);
-                if (rtIndex >= 0) {
-                    const rt = recurringTasks[rtIndex];
-                    const completionData = { completed: true, actualTime, time: task.time };
-                    if (task.betPlaced) {
-                        Object.assign(completionData, {
-                            betPlaced: true,
-                            betWon: true,
-                            betAmount: task.betAmount,
-                            betMultiplier: task.betMultiplier
-                        });
-                    }
-                    const newCompletions = { ...rt.completions, [date]: completionData };
-                    const updatedRT = { ...rt, completions: newCompletions };
-
-                    await api.recurringTasks.update(updatedRT);
-
-                    setRecurringTasks(prev => {
-                        const copy = [...prev];
-                        copy[rtIndex] = updatedRT;
-                        return copy;
-                    });
-                }
-            } else {
-                const updatedTask = { ...task, completed: true, actualTime };
-                if (task.betPlaced) updatedTask.betWon = true;
-
-                await api.tasks.update(updatedTask as Task);
-
-                setTasks(prevTasks => {
-                    const newTasks = { ...prevTasks };
-                    newTasks[date] = newTasks[date].map(t => {
-                        if (t.id === task.id) return updatedTask as Task;
-                        return t;
-                    });
-                    return newTasks;
-                });
-            }
-        } catch (e) {
-            console.error("Failed to complete task", e);
-        }
-
-        setTaskToComplete(null);
-        setLastUpdatedDate(date);
-    };
-
-    const generateStoryForTask = async (date: string, task: Task) => {
-        setSelectedTaskId(task.id);
-        setIsLoadingStory(true);
-        setMotivationalStory('');
-        const story = await generateGogginsStory(task, goals.filter(g => !g.completed), task.justification);
-
-        try {
-            if (task.recurringMasterId) {
-                const masterTask = recurringTasks.find(rt => rt.id === task.recurringMasterId);
-                if (masterTask) {
-                    const updated = { ...masterTask, story };
-                    await api.recurringTasks.update(updated);
-                    setRecurringTasks(prev => prev.map(rt => rt.id === updated.id ? updated : rt));
-                }
-            } else {
-                const updated = { ...task, story };
-                await api.tasks.update(updated as Task);
-                setTasks(prev => {
-                    const newTasks = { ...prev };
-                    if (newTasks[date]) {
-                        newTasks[date] = newTasks[date].map(t => t.id === task.id ? updated as Task : t);
-                    }
-                    return newTasks;
-                });
-            }
-        } catch (e) {
-            console.error("Failed to save generated story", e);
-        }
-
-        setMotivationalStory(story);
-        setIsLoadingStory(false);
-    };
-
-    // Side Quest Handlers
-    const completeSideQuest = async (questId: string) => {
-        const today = getLocalDateString();
-
-        // 1. Find the quest
-        const sideQuestToUpdate = sideQuests.find(q => q.id === questId);
-        if (!sideQuestToUpdate) return;
-
-        // 2. Prepare Optimistic Data
-        const reward = DIFFICULTY_REWARDS[sideQuestToUpdate.difficulty];
-        const newBonuses = (character.bonuses || 0) + reward;
-
-        const newCompletions = { ...sideQuestToUpdate.completions };
-        newCompletions[today] = (newCompletions[today] || 0) + 1;
-        const updatedQuest = { ...sideQuestToUpdate, completions: newCompletions };
-
-        // 3. Optimistic Updates (UI updates immediately)
-        // Update Side Quests List
-        setSideQuests(prev => prev.map(q => q.id === questId ? updatedQuest : q));
-
-        // Update Character (GP/Bonuses)
-        setCharacter(prev => ({ ...prev, bonuses: newBonuses }));
-
-        // Flash Bonus
-        // User requested to REMOVE the banner for side quest completion.
-        // if (reward > 0) {
-        //    setShowCompletionBonus({ title: "Side Quest Complete!", xp: 0, earnings: reward });
-        //    setTimeout(() => setShowCompletionBonus(null), 3000);
-        // }
-
-        // 4. API Call in Background
-        try {
-            await api.sideQuests.update(updatedQuest);
-            // Also sync character to backend
-            await api.character.update({ ...character, bonuses: newBonuses });
-        } catch (e) {
-            console.error("Failed to complete side quest, rolling back...", e);
-            // 5. Rollback on Failure
-            setSideQuests(prev => prev.map(q => q.id === questId ? sideQuestToUpdate : q));
-            setCharacter(prev => ({ ...prev, bonuses: (character.bonuses || 0) })); // Revert bonus
-            // Ideally we'd have the exact previous character state to revert to, 
-            // but deducting the added amount is a safe approximation for this simple case 
-            // or we captures 'character' before update.
-            // Better: use Functional State Update for rollback or capture previous value.
-        }
-    };
-
-    const addSideQuest = async (questData: { description: string, difficulty: TaskDifficulty, dailyGoal: number }) => {
-        const newQuest: SideQuest = { ...questData, id: generateId(), completions: {} };
-        try {
-            const saved = await api.sideQuests.create(newQuest);
-            setSideQuests(prev => [...prev, saved]);
-        } catch (e) { console.error("Failed to add side quest", e); }
-    };
-
-    const deleteSideQuest = async (questId: string) => {
-        try {
-            await api.sideQuests.delete(questId);
-            setSideQuests(prev => prev.filter(q => q.id !== questId));
-        } catch (e) { console.error("Failed to delete side quest", e); }
-    };
-
-    const updateSideQuest = async (questId: string, updates: { description: string, difficulty: TaskDifficulty, dailyGoal: number }) => {
-        const existing = sideQuests.find(q => q.id === questId);
-        if (!existing) return;
-        const updated = { ...existing, ...updates };
-        try {
-            await api.sideQuests.update(updated);
-            setSideQuests(prev => prev.map(q => q.id === questId ? updated : q));
-        } catch (e) { console.error("Failed to update side quest", e); }
-    };
-
-    // Diary Handlers
-    const saveInitialReflection = async (date: string, reflection: string) => {
-        setIsGeneratingFeedback(true);
-        const feedback = await generateGogginsReflectionFeedback(reflection, goals.filter(g => !g.completed));
-
-        const existing = diaryEntries[date] || { date };
-        const updatedEntry = { ...existing, initialReflection: reflection, initialFeedback: feedback };
-
-        try {
-            // Diary API uses PUT /date
-            await api.diaryEntries.update(date, updatedEntry);
-            setDiaryEntries(prev => ({
-                ...prev,
-                [date]: updatedEntry
-            }));
-        } catch (e) {
-            console.error("Failed to save diary entry", e);
-        }
-        setIsGeneratingFeedback(false);
-    };
-
-    const saveDebrief = async (date: string, debrief: string) => {
-        setIsGeneratingFeedback(true);
-        const tasksForDay = getTasksForDate(date).filter(t => t.completed);
-        const scoreForDay = dailyScores.find(s => s.date === date)?.earnings || 0;
-        const debriefData = { debriefEntry: debrief, initialReflection: diaryEntries[date]?.initialReflection, tasks: tasksForDay, earnings: scoreForDay };
-
-        const { feedback, grade } = await generateGogginsDiaryFeedback(debriefData, goals.filter(g => !g.completed));
-
-        const existing = diaryEntries[date] || { date };
-        const updatedEntry = { ...existing, debrief, finalFeedback: feedback, grade };
-
-        try {
-            await api.diaryEntries.update(date, updatedEntry);
-            setDiaryEntries(prev => ({
-                ...prev,
-                [date]: updatedEntry
-            }));
-        } catch (e) {
-            console.error("Failed to save debrief", e);
-        }
-        setIsGeneratingFeedback(false);
-    };
-
-    // Review Handler
-    const handleGenerateReview = async (days: number) => {
-        setIsGeneratingReview(true);
-        setReviewResult(null);
-
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(endDate.getDate() - days);
-
-        const dateRange = getDatesInRange(startDate, endDate).map(getLocalDateString);
-
-        const dailyBreakdown = dateRange.map(date => {
-            const tasksForDate = getTasksForDate(date);
-            const score = dailyScores.find(s => s.date === date);
-            return {
-                date,
-                completed: tasksForDate.filter(t => t.completed).length,
-                total: tasksForDate.length,
-                earnings: score?.earnings || 0
-            };
-        });
-
-        const categoryBreakdown: { category: string; completed: number; earnings: number }[] = [];
-        categoryScores.forEach(cs => {
-            categoryBreakdown.push({ category: cs.category, completed: cs.tasksCompleted, earnings: cs.earnings });
-        });
-
-        const diaryEntriesForRange = dateRange
-            .map(date => diaryEntries[date]?.debrief)
-            .filter((entry): entry is string => !!entry);
-
-        const completedTasksList = dateRange.flatMap(date =>
-            getTasksForDate(date)
-                .filter(t => t.completed)
-                .map(t => ({ description: t.description, category: t.category, difficulty: t.difficulty }))
-        );
-
-        const reviewData = {
-            days,
-            totalTasks: dailyBreakdown.reduce((sum, d) => sum + d.total, 0),
-            completedTasks: dailyBreakdown.reduce((sum, d) => sum + d.completed, 0),
-            totalEarnings: dailyBreakdown.reduce((sum, d) => sum + d.earnings, 0),
-            dailyBreakdown,
-            categoryBreakdown,
-            diaryEntries: diaryEntriesForRange,
-            completedTasksList,
-        };
-
-        const result = await generateGogginsReview(reviewData, goals.filter(g => !g.completed), sideQuests);
-        setReviewResult(result);
-        setIsGeneratingReview(false);
-    };
-
-    // Goal Handlers
-    const addGoal = async (goalData: Goal) => {
-        const accomplishmentsSummary = {
-            totalTasks: allTasks.filter(t => t.completed).length,
-            topCategories: categoryScores.sort((a, b) => b.tasksCompleted - a.tasksCompleted).slice(0, 3).map(c => c.category)
-        };
-        const suggestions = await generateAtomicHabitsSystem(goalData, goals, accomplishmentsSummary);
-        const label = await generateLabel(goalData.contract?.primaryObjective || goalData.description);
-
-        // Optimistic ID, replaced by API
-        const newGoal = { ...goalData, id: generateId(), system: suggestions, label };
-
-        try {
-            const saved = await api.goals.create(newGoal);
-            setGoals(prev => [...prev, saved]);
-            setAtomicHabitsSuggestions(suggestions);
-        } catch (e) { console.error("Failed to add goal", e); }
-    };
-
-    const updateGoal = async (goalId: string, updates: { description: string; targetDate: string }) => {
-        const label = await generateLabel(updates.description);
-        const existing = goals.find(g => g.id === goalId);
-        if (!existing) return;
-        const updated = { ...existing, ...updates, label };
-
-        try {
-            await api.goals.update(updated);
-            setGoals(goals.map(g => g.id === goalId ? updated : g));
-        } catch (e) { console.error("Failed to update goal", e); }
-    };
-
-    const deleteGoal = async (goalId: string) => {
-        try {
-            await api.goals.delete(goalId);
-            setGoals(goals.filter(g => g.id !== goalId));
-        } catch (e) { console.error("Failed to delete goal", e); }
-    };
-
-    const handleGoalChangeRequest = async (justification: string, currentGoal: Goal) => {
-        const result = await generateGogginsGoalChangeVerdict(justification, currentGoal.description);
-        if (result.approved) {
-            const newSpent = (character.spent || 0) + GOAL_CHANGE_COST;
-            try {
-                await api.character.update({ ...character, spent: newSpent });
-                setCharacter(prev => ({ ...prev, spent: newSpent }));
-            } catch (e) { console.error("Failed to update character spent", e); }
-        }
-        return result;
-    };
-
-    const completeGoal = async (goalId: string, proof: string) => {
-        const goal = goals.find(g => g.id === goalId);
-        if (!goal) return { approved: false, feedback: "Goal not found." };
-
-        const result = await generateGogginsGoalCompletionVerdict(goal.description, proof);
-
-        if (result.approved) {
-            const completionDate = getLocalDateString();
-            const updated = { ...goal, completed: true, completionDate, completionProof: proof, completionFeedback: result.feedback };
-
-            try {
-                await api.goals.update(updated);
-                setGoals(goals.map(g => g.id === goalId ? updated : g));
-
-                const newBonuses = (character.bonuses || 0) + GOAL_COMPLETION_REWARD;
-                await api.character.update({ ...character, bonuses: newBonuses });
-                setCharacter(prev => ({ ...prev, bonuses: newBonuses }));
-
-                setShowCompletionBonus({ title: "Objective Conquered!", xp: 0, earnings: GOAL_COMPLETION_REWARD });
-                setTimeout(() => setShowCompletionBonus(null), 5000);
-            } catch (e) { console.error("Failed to complete goal", e); }
-        }
-
-        return result;
-    };
-
-    const updateGoalContract = async (goalId: string, newContract: GoalContract) => {
-        const goalToUpdate = goals.find(g => g.id === goalId);
-        if (!goalToUpdate) return;
-
-        const accomplishmentsSummary = {
-            totalTasks: allTasks.filter(t => t.completed).length,
-            topCategories: categoryScores.sort((a, b) => b.tasksCompleted - a.tasksCompleted).slice(0, 3).map(c => c.category)
-        };
-
-        const goalWithNewContract = { ...goalToUpdate, contract: newContract };
-
-        const newSystem = await generateAtomicHabitsSystem(goalWithNewContract, goals, accomplishmentsSummary);
-        const newLabel = await generateLabel(newContract.primaryObjective);
-
-        const updated = { ...goalToUpdate, contract: newContract, system: newSystem, label: newLabel };
-
-        try {
-            await api.goals.update(updated);
-            setGoals(prev => prev.map(g => g.id === goalId ? updated : g));
-            setAtomicHabitsSuggestions(newSystem);
-        } catch (e) { console.error("Update Contract Failed", e); }
-    };
-
-    // Weekly Goal Handlers
-    // Weekly Goal Handlers
-    const addWeeklyGoal = async (weekKey: string, goalData: WeeklyGoal) => {
-        const label = await generateLabel(goalData.contract?.primaryObjective || goalData.description);
-
-        // Optimistic object
-        const newGoal: WeeklyGoal = { ...goalData, id: generateId(), label };
-
-        const activeGoals = goals.filter(g => !g.completed);
-        if (activeGoals.length > 0) {
-            const { alignmentScore, alignedGoalId } = await analyzeTaskGoalSimilarity(newGoal.description, activeGoals);
-            newGoal.goalAlignment = alignmentScore;
-            newGoal.alignedGoalId = alignedGoalId;
-        }
-
-        try {
-            const saved = await api.weeklyGoals.create(newGoal);
-            setWeeklyGoals(prev => ({
-                ...prev,
-                [weekKey]: [...(prev[weekKey] || []), saved]
-            }));
-        } catch (e) { console.error(e); }
-    };
-
-    const updateWeeklyGoal = async (weekKey: string, goalId: string, description: string) => {
-        const weekGoals = weeklyGoals[weekKey] || [];
-        const existing = weekGoals.find(g => g.id === goalId);
-        if (!existing) return;
-
-        let updatedGoal = { ...existing, description };
-
-        // Check alignment again logic...
-        const activeGoals = goals.filter(g => !g.completed);
-        if (activeGoals.length > 0) {
-            const { alignmentScore, alignedGoalId } = await analyzeTaskGoalSimilarity(description, activeGoals);
-            updatedGoal.goalAlignment = alignmentScore;
-            updatedGoal.alignedGoalId = alignedGoalId;
-        }
-
-        try {
-            await api.weeklyGoals.update(updatedGoal);
-            setWeeklyGoals(prev => {
-                const current = prev[weekKey] || [];
-                return { ...prev, [weekKey]: current.map(g => g.id === goalId ? updatedGoal : g) };
-            });
-        } catch (e) { console.error(e); }
-    };
-
-    const updateWeeklyGoalContract = async (weekKey: string, goalId: string, newContract: GoalContract) => {
-        const newLabel = await generateLabel(newContract.primaryObjective);
-        const weekGoals = weeklyGoals[weekKey] || [];
-        const existing = weekGoals.find(g => g.id === goalId);
-        if (!existing) return;
-
-        const updated = { ...existing, contract: newContract, label: newLabel, description: newContract.primaryObjective };
-
-        try {
-            await api.weeklyGoals.update(updated);
-            setWeeklyGoals(prev => {
-                const current = prev[weekKey] || [];
-                return { ...prev, [weekKey]: current.map(g => g.id === goalId ? updated : g) };
-            });
-        } catch (e) { console.error(e); }
-    };
-
-    const deleteWeeklyGoal = async (weekKey: string, goalId: string) => {
-        try {
-            await api.weeklyGoals.delete(goalId);
-            setWeeklyGoals(prev => ({
-                ...prev,
-                [weekKey]: (prev[weekKey] || []).filter(g => g.id !== goalId)
-            }));
-        } catch (e) { console.error(e); }
-    };
-
-    const evaluateWeeklyGoal = async (weekKey: string, goalId: string) => {
-        const goal = weeklyGoals[weekKey]?.find(g => g.id === goalId);
-        if (!goal) return;
-
-        const start = getStartOfWeek(new Date(goal.targetDate.replace(/-/g, '/')));
-        const end = getEndOfWeek(new Date(goal.targetDate.replace(/-/g, '/')));
-        const weekDates = getDatesInRange(start, end).map(d => getLocalDateString(d));
-
-        const completedTasks = weekDates.flatMap(date =>
-            getTasksForDate(date)
-                .filter(t => t.completed)
-                .map(t => ({ description: t.description, category: t.category }))
-        );
-
-        const rewardsPurchasedThisWeek = purchasedRewards.filter(r => weekDates.includes(r.purchaseDate));
-
-        const evaluation = await generateWeeklyGoalEvaluation(goal.description, completedTasks, rewardsPurchasedThisWeek);
-
-        const updated = { ...goal, evaluation };
-
-        try {
-            await api.weeklyGoals.update(updated);
-            setWeeklyGoals(prev => ({
-                ...prev,
-                [weekKey]: (prev[weekKey] || []).map(g => g.id === goalId ? updated : g)
-            }));
-        } catch (e) { console.error(e); }
-    };
-
-    // Check for weekly briefing on Sunday
-    useEffect(() => {
-        const today = new Date();
-        if (today.getDay() === 0) { // Sunday
-            const weekKey = getWeekKey(today);
-            if (!weeklyBriefings[weekKey] && !isGeneratingBriefing) {
-                const generateBriefing = async () => {
-                    setIsGeneratingBriefing(true);
-
-                    const lastWeekDate = new Date();
-                    lastWeekDate.setDate(today.getDate() - 7);
-                    const lastWeekKey = getWeekKey(lastWeekDate);
-
-                    const previousWeekEvaluations = (weeklyGoals[lastWeekKey] || [])
-                        .map(g => g.evaluation)
-                        .filter(e => e !== undefined);
-
-                    const nextWeekGoals = weeklyGoals[weekKey] || [];
-
-                    const briefing = await generateGogginsWeeklyBriefing(previousWeekEvaluations as any, nextWeekGoals, goals.filter(g => !g.completed));
-
-                    setWeeklyBriefings(prev => ({ ...prev, [weekKey]: briefing }));
-                    setBriefingToShow(briefing);
-                    setIsGeneratingBriefing(false);
-                };
-                generateBriefing();
-            }
-        }
-    }, [weeklyGoals, goals, weeklyBriefings, isGeneratingBriefing]);
-
-    // Reward Handlers
-    // Reward Handlers
-    const addReward = async (rewardData: { name: string; cost: number }) => {
-        const newReward: Reward = { ...rewardData, id: generateId() };
-        try {
-            const saved = await api.rewards.create(newReward);
-            setRewards([...rewards, saved]);
-        } catch (e) { console.error(e); }
-    };
-
-    const deleteReward = async (rewardId: string) => {
-        try {
-            await api.rewards.delete(rewardId);
-            setRewards(rewards.filter(r => r.id !== rewardId));
-        } catch (e) { console.error(e); }
-    };
-
-    const purchaseReward = async (reward: Reward) => {
-        if (currentBalance >= reward.cost) {
-            const newPurchase: PurchasedReward = {
-                id: generateId(),
-                rewardId: reward.id,
-                name: reward.name,
-                cost: reward.cost,
-                purchaseDate: getLocalDateString()
-            };
-
-            try {
-                const saved = await api.purchasedRewards.create(newPurchase);
-                setPurchasedRewards([...purchasedRewards, saved]);
-
-                const newSpent = (character.spent || 0) + reward.cost;
-                await api.character.update({ ...character, spent: newSpent });
-                setCharacter(prev => ({ ...prev, spent: newSpent }));
-            } catch (e) { console.error(e); }
-        }
-    };
-
-    // Wish List and Core List Handlers
-    // Wish List and Core List Handlers
-    const addWish = async (wishData: Wish) => {
-        const label = await generateLabel(wishData.contract?.primaryObjective || wishData.description);
-        const newWish = { ...wishData, id: generateId(), label };
-        try {
-            const saved = await api.wishList.create(newWish);
-            setWishList(prev => [...prev, saved]);
-        } catch (e) { console.error(e); }
-    };
-    // Note: API for Wish List might not support UPDATE in my previous implementation.
-    // I added CREATE and DELETE.
-    // Let's check api.ts... "wishList: { list, create, delete }". No update!
-    // So updateWish is strictly local? Or I need to add Update to backend.
-    // I will skip backend call for upgrade for now or re-create it?
-    // Actually, updateWish is used for "editing text".
-    // I'll stick to local only for update, or assume I need to fix backend.
-    // "deleteWish" works. "addWish" works.
-    // "updateWishContract" also is an update.
-    // I will just update local state for now for wish updates, as backend support is missing in "api.ts" definition I wrote.
-    const updateWish = (wishId: string, updates: { description: string; link?: string; explanation: string }) => {
-        setWishList(prev => prev.map(w => w.id === wishId ? { ...w, ...updates } : w));
-    };
-    const updateWishContract = async (wishId: string, newContract: GoalContract) => {
-        const newLabel = await generateLabel(newContract.primaryObjective);
-        setWishList(prev => prev.map(w => w.id === wishId ? { ...w, contract: newContract, label: newLabel, description: newContract.primaryObjective } : w));
-    };
-    const deleteWish = async (wishId: string) => {
-        try {
-            await api.wishList.delete(wishId);
-            setWishList(prev => prev.filter(w => w.id !== wishId));
-        } catch (e) { console.error(e); }
-    };
-
-    const addCoreTask = async (coreData: CoreTask) => {
-        const label = await generateLabel(coreData.contract?.primaryObjective || coreData.description);
-        const newTask = { ...coreData, id: generateId(), label };
-        try {
-            const saved = await api.coreList.create(newTask);
-            setCoreList(prev => [...prev, saved]);
-        } catch (e) { console.error(e); }
-    };
-    // Similarly, coreList API had list, create, delete. No update.
-    const updateCoreTask = (id: string, updates: { description: string; link?: string; explanation: string }) => {
-        setCoreList(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
-    };
-    const updateCoreTaskContract = async (id: string, newContract: GoalContract) => {
-        const newLabel = await generateLabel(newContract.primaryObjective);
-        setCoreList(prev => prev.map(c => c.id === id ? { ...c, contract: newContract, label: newLabel, description: newContract.primaryObjective } : c));
-    };
-    const deleteCoreTask = async (id: string) => {
-        try {
-            await api.coreList.delete(id);
-            setCoreList(prev => prev.filter(c => c.id !== id));
-        } catch (e) { console.error(e); }
-    };
-
-    // AI Task Assignment Handlers
-    const getAppContext = (): AppContext => ({
-        currentDate: selectedDate,
-        tasks, recurringTasks, sideQuests, diaryEntries, goals, weeklyGoals,
-        rewards, purchasedRewards, character, dailyScores, categoryScores,
-        objectiveScores, streak, dailyGoal, userCategories, wishList, coreList
-    });
-
-    const handleAIAssignedTask = async () => {
-        setIsAssigningTask(true);
-        const appContext = getAppContext();
-        const taskData = await generateAIAssignedTask(appContext);
-        await addTask({ ...taskData, date: selectedDate, recurrenceRule: 'None', time: undefined });
-        setIsAssigningTask(false);
-    };
-
-    const handleGogginsWishSelection = async () => {
-        setIsSelectingWish(true);
-        const appContext = getAppContext();
-        const taskData = await generateTaskFromWishList(appContext);
-
-        await addTask({
-            ...taskData,
-            description: taskData.description,
-            date: selectedDate,
-            recurrenceRule: 'None',
-            time: undefined,
-        });
-
-        // Remove the original wish from the list
-        const wishToRemove = wishList.find(w => w.description === taskData.originalWishDescription);
-        if (wishToRemove) {
-            deleteWish(wishToRemove.id);
-        }
-
-        setIsSelectingWish(false);
-    };
-
-    const handleGogginsCoreSelection = async () => {
-        setIsForgingCoreMission(true);
-        const appContext = getAppContext();
-        const taskData = await generateTaskFromCoreList(appContext);
-
-        await addTask({
-            ...taskData,
-            description: taskData.description,
-            date: selectedDate,
-            recurrenceRule: 'None',
-            time: undefined,
-        });
-
-        setIsForgingCoreMission(false);
-    };
-
-    // Chatbot Handler
-    const handleSendMessage = async (message: string) => {
-        const newMessages: { sender: 'user' | 'ai'; content: string }[] = [...chatMessages, { sender: 'user', content: message }];
-        setChatMessages(newMessages);
-        setIsChatLoading(true);
-
-        const appContext = getAppContext();
-        const response = await generateChatResponse(newMessages, appContext);
-
-        setChatMessages([...newMessages, { sender: 'ai', content: response }]);
-        setIsChatLoading(false);
-    };
-
-    return (
-        <div className="min-h-screen bg-gray-900 text-white font-sans">
-            <Header totalGP={totalGP} />
-            <main className="p-4 sm:p-8 space-y-6">
-                <StatusBar character={character} dailyScores={dailyScores} totalEarnings={totalEarnings} totalGP={totalGP} />
-
-                <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-                    {/* LEFT COLUMN */}
-                    <div className="space-y-6">
-                        <CollapsibleSection title="Leaderboards" icon={<ChartBarSquareIcon />} storageKey="goggins-leaderboards-section">
-                            <Leaderboard scores={dailyScores} streak={streak} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />
-                            <div className="pt-6 mt-6 border-t border-gray-700">
-                                <CategoryLeaderboard scores={categoryScores} />
-                            </div>
-                            <div className="pt-6 mt-6 border-t border-gray-700">
-                                <ObjectiveLeaderboard scores={objectiveScores} />
-                            </div>
-                        </CollapsibleSection>
-                        <CollapsibleSection title="After-Action Review" icon={<ListBulletIcon />} storageKey="goggins-review-section">
-                            <Reviewer onGenerateReview={handleGenerateReview} isGenerating={isGeneratingReview} review={reviewResult} />
-                        </CollapsibleSection>
-                    </div>
-
-                    {/* CENTER COLUMN */}
-                    <div className="xl:col-span-2 space-y-6">
-                        <DailyCompletionBar completed={getTasksForDate(selectedDate).filter(t => t.completed).length} total={getTasksForDate(selectedDate).length} />
-                        <MotivationModal story={motivationalStory} isLoading={isLoadingStory} />
-                        <CalendarContainer
-                            view={calendarView}
-                            onViewChange={setCalendarView}
-                            selectedDate={selectedDate}
-                            onDateSelect={handleDateSelect}
-                            scores={dailyScores}
-                            tasks={tasks}
-                            recurringTasks={recurringTasks}
-                            userCategories={effectiveUserCategories}
-                            onAddTask={addTask}
-                            onToggleTask={toggleTask}
-                            onDeleteTask={deleteTask}
-                            onEditTask={(item) => setItemToEdit(item)}
-                            onSelectTask={selectTask}
-                            onUpdateTime={updateTaskTime}
-                            onGenerateStory={generateStoryForTask}
-                            selectedTaskId={selectedTaskId}
-                            getTasksForDate={getTasksForDate}
-                            diaryEntries={diaryEntries}
-                            goals={goals}
-                            onSaveInitialReflection={saveInitialReflection}
-                            onSaveDebrief={saveDebrief}
-                            isGeneratingFeedback={isGeneratingFeedback}
-                        />
-                    </div>
-
-                    {/* RIGHT COLUMN */}
-                    <div className="space-y-6">
-                        <CollapsibleSection title="Add Mission" icon={<PlusIcon />} storageKey="goggins-add-mission">
-                            <TaskInput onAddTask={addTask} userCategories={effectiveUserCategories} onAIAssignedTask={handleAIAssignedTask} isAssigningTask={isAssigningTask} />
-                        </CollapsibleSection>
-                        <CollapsibleSection title="Objectives" icon={<FlagIcon />} storageKey="goggins-objectives">
-                            <Goals
-                                goals={goals}
-                                onAddGoal={addGoal}
-                                onUpdateGoal={updateGoal}
-                                onDeleteGoal={deleteGoal}
-                                onGoalChangeRequest={handleGoalChangeRequest}
-                                onCompleteGoal={completeGoal}
-                                onUpdateGoalContract={updateGoalContract}
-                                currentBalance={currentBalance}
-                                atomicHabitsSuggestions={atomicHabitsSuggestions}
-                                onCloseSuggestions={() => setAtomicHabitsSuggestions(null)}
-                            />
-                        </CollapsibleSection>
-                        <CollapsibleSection title="Weekly Objectives" icon={<CalendarDaysIcon />} storageKey="goggins-weekly-objectives-section">
-                            <WeeklyGoalComponent
-                                weeklyGoals={weeklyGoals}
-                                goals={goals}
-                                onAddGoal={addWeeklyGoal}
-                                onUpdateGoal={updateWeeklyGoal}
-                                onDeleteGoal={deleteWeeklyGoal}
-                                onEvaluateGoal={evaluateWeeklyGoal}
-                                onUpdateWeeklyGoalContract={updateWeeklyGoalContract}
-                                isBriefingLoading={isGeneratingBriefing}
-                            />
-                        </CollapsibleSection>
-                        <CollapsibleSection title="Forge Missions" icon={<BoltIcon />} storageKey="goggins-forge-missions">
-                            <WishList
-                                wishList={wishList}
-                                onAddWish={addWish}
-                                onUpdateWish={updateWish}
-                                onDeleteWish={deleteWish}
-                                onGogginsWishSelection={handleGogginsWishSelection}
-                                isSelectingWish={isSelectingWish}
-                                onUpdateWishContract={updateWishContract}
-                            />
-                            <div className="pt-6 mt-6 border-t border-gray-700">
-                                <CoreList
-                                    coreList={coreList}
-                                    onAdd={addCoreTask}
-                                    onUpdate={updateCoreTask}
-                                    onDelete={deleteCoreTask}
-                                    onForge={handleGogginsCoreSelection}
-                                    isForging={isForgingCoreMission}
-                                    onUpdateCoreTaskContract={updateCoreTaskContract}
-                                />
-                            </div>
-                        </CollapsibleSection>
-                        <CollapsibleSection title="Side Quests" icon={<SparklesIcon />} storageKey="goggins-side-quests-section">
-                            <SideQuests
-                                sideQuests={sideQuests}
-                                onCompleteSideQuest={completeSideQuest}
-                                onAddSideQuest={addSideQuest}
-                                onDeleteSideQuest={deleteSideQuest}
-                                onUpdateSideQuest={updateSideQuest}
-                            />
-                        </CollapsibleSection>
-                        <CollapsibleSection title="Rewards Locker" icon={<TrophyIcon />} storageKey="goggins-rewards-section">
-                            <Rewards
-                                rewards={rewards}
-                                purchasedRewards={purchasedRewards}
-                                currentBalance={currentBalance}
-                                onAddReward={addReward}
-                                onDeleteReward={deleteReward}
-                                onPurchaseReward={purchaseReward}
-                            />
-                        </CollapsibleSection>
-                    </div>
-                </div>
-            </main>
-
-            {taskToComplete && (
-                <ActualTimeModal
-                    task={taskToComplete.task}
-                    onConfirm={(time) => handleConfirmCompletion(taskToComplete.date, taskToComplete.task, time)}
-                    onCancel={() => setTaskToComplete(null)}
-                />
-            )}
-
-            {itemToEdit && (
-                <EditTaskModal
-                    item={itemToEdit}
-                    onUpdate={updateTask}
-                    onCancel={() => setItemToEdit(null)}
-                    userCategories={effectiveUserCategories}
-                />
-            )}
-
-            {showCompletionBonus && <CompletionBonusModal bonus={showCompletionBonus} />}
-            {briefingToShow && <WeeklyBriefingModal briefing={briefingToShow} onClose={() => setBriefingToShow(null)} />}
-
-            <button
-                onClick={() => setIsChatOpen(true)}
-                className="fixed bottom-4 left-4 bg-orange-600 hover:bg-orange-700 text-white p-4 rounded-full shadow-lg z-40"
-                aria-label="Open AI Tactical Advisor Chat"
-            >
-                <ChatBubbleLeftRightIcon className="w-8 h-8" />
-            </button>
-
-            <Chatbot
-                isOpen={isChatOpen}
-                onClose={() => setIsChatOpen(false)}
-                messages={chatMessages}
-                onSendMessage={handleSendMessage}
-                isLoading={isChatLoading}
-            />
-
-            {taskToBetOn && (
-                <BetModal
-                    task={taskToBetOn}
-                    currentBalance={currentBalance}
-                    onConfirmBet={handleConfirmBet}
-                    onNoBet={handleNoBet}
-                />
-            )}
-        </div>
     );
 };
 

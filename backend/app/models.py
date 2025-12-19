@@ -11,7 +11,8 @@ class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True, default=generate_uuid)
     username = Column(String, unique=True, index=True)
-    api_key = Column(String, nullable=True) # Encrypted or just stored? Stored for BYOK.
+    hashed_password = Column(String, nullable=True) # Added for authentication
+    api_key = Column(String, nullable=True) # Stored for BYOK.
 
 class Task(Base):
     __tablename__ = "tasks"

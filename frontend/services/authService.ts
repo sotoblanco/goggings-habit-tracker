@@ -10,14 +10,14 @@ export interface AuthState {
 const STORAGE_KEY_TOKEN = 'goggins_auth_token';
 
 export const authService = {
-    login: async (username: string): Promise<User> => {
-        const response = await api.auth.login(username); // Remove API Key
+    login: async (username: string, password?: string): Promise<User> => {
+        const response = await api.auth.login(username, password);
         localStorage.setItem(STORAGE_KEY_TOKEN, response.token);
         return response.user;
     },
 
-    signup: async (username: string): Promise<User> => {
-        const response = await api.auth.register(username); // Remove API Key
+    signup: async (username: string, password?: string): Promise<User> => {
+        const response = await api.auth.register(username, password);
         localStorage.setItem(STORAGE_KEY_TOKEN, response.token);
         return response.user;
     },

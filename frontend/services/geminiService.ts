@@ -7,7 +7,7 @@ import { api } from './api';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize the model with the API key from environment variables
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
+const genAI = new GoogleGenerativeAI((import.meta as any).env.VITE_GEMINI_API_KEY || '');
 
 // Removed manual initialization as we use the env var now
 export const initializeGemini = (key: string) => {
@@ -208,16 +208,25 @@ export const enhanceText = async (text: string, type: 'mission' | 'goal' | 'week
   }
 };
 
-export const generatePreStateQuestions = async (context: string): Promise<{ question: string; answer: string }[]> => {
+
+export const generatePreStateQuestions = async (context: string, whyAnswers?: string[]): Promise<{ questions: string[] }> => {
   // Stub for now to unblock build. Ideally move to backend.
-  return [
-    { question: "Why is this important?", answer: "" },
-    { question: "What happens if I fail?", answer: "" },
-    { question: "Who is watching?", answer: "" }
-  ];
+  return {
+    questions: [
+      "Why is this important?",
+      "What happens if I fail?",
+      "Who is watching?"
+    ]
+  };
 };
 
-export const generateGoalContract = async (description: string, type: string = "goal"): Promise<GoalContract> => {
+export const generateGoalContract = async (
+  description: string,
+  targetDate?: string,
+  preStateAnswers?: any[],
+  whyAnswers?: string[],
+  type: string = "goal"
+): Promise<GoalContract> => {
   try {
     return await api.ai.contract({ description, type });
   } catch (e) {
@@ -226,20 +235,20 @@ export const generateGoalContract = async (description: string, type: string = "
       contractStatement: "I hereby pledge to destroy this goal.",
       rewardPayout: 0,
       kpis: [{ description: "Completion", type: "External Metric", target: "100%" }],
-      preStateAnswers: [],
-      fiveWhys: ["Why?", "Why?", "Why?", "Why?", "Why?"]
+      preStateAnswers: preStateAnswers || [],
+      fiveWhys: whyAnswers || ["Why?", "Why?", "Why?", "Why?", "Why?"]
     };
   }
 };
 
-export const generateWeeklyObjectiveContract = async (description: string): Promise<GoalContract> => {
-  return generateGoalContract(description, "weekly");
+export const generateWeeklyObjectiveContract = async (description: string, targetDate?: string, preState?: any[], why?: string[]): Promise<GoalContract> => {
+  return generateGoalContract(description, targetDate, preState, why, "weekly");
 };
 
-export const generateWishContract = async (description: string): Promise<GoalContract> => {
-  return generateGoalContract(description, "wish");
+export const generateWishContract = async (description: string, preState?: any[], why?: string[]): Promise<GoalContract> => {
+  return generateGoalContract(description, undefined, preState, why, "wish");
 };
 
-export const generateCoreTaskContract = async (description: string): Promise<GoalContract> => {
-  return generateGoalContract(description, "core");
+export const generateCoreTaskContract = async (description: string, preState?: any[], why?: string[]): Promise<GoalContract> => {
+  return generateGoalContract(description, undefined, preState, why, "core");
 };

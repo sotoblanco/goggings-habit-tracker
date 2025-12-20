@@ -180,7 +180,7 @@ export const useTaskActions = (
         setTaskToBetOn(tempTask);
     };
 
-    const handleConfirmBet = (task: Task, betAmount: number) => {
+    const handleConfirmBet = async (task: Task, betAmount: number) => {
         const finalTask = {
             ...task,
             betPlaced: true,
@@ -188,6 +188,17 @@ export const useTaskActions = (
             betMultiplier: (task as any).betMultiplier,
             recurrenceRule: (task as any).recurrenceRule || 'None'
         };
+
+        // DEDUCT STAKE IMMEDIATELY
+        const newSpent = (character.spent || 0) + betAmount;
+        try {
+            await api.character.update({ ...character, spent: newSpent });
+            setCharacter(c => ({ ...c, spent: newSpent }));
+        } catch (e) {
+            console.error("Failed to deduct bet stake", e);
+            return; // Don't place bet if payment fails
+        }
+
         _commitTask(finalTask as any);
         setTaskToBetOn(null);
     };
@@ -289,11 +300,18 @@ export const useTaskActions = (
         let charUpdates = { ...character };
 
         if (task.betPlaced && !task.completed) {
-            const winnings = (task.betAmount || 0) * (task.betMultiplier || 1);
-            betWinnings = (task.betAmount || 0) + winnings;
+            // Payout = Stake * Multiplier (Standard Decimal Odds)
+            // Since Stake was paid upfront, we just add the Payout to bonuses.
+            const payout = (task.betAmount || 0) * (task.betMultiplier || 1);
+            betWinnings = payout;
+
+            // Add Payout to bonuses (Money In)
+            // Note: Profit = Payout - Stake. But since Stake is already in 'Spent', 
+            // 'Total Earnings' (Bonuses) needs to go up by full Payout to balance correctly.
             charUpdates = { ...charUpdates, bonuses: (charUpdates.bonuses || 0) + betWinnings };
+
             if (betWinnings > 0) {
-                setShowCompletionBonus({ title: "Bet Won!", earnings: winnings, xp: 0 });
+                setShowCompletionBonus({ title: "Bet Won!", earnings: betWinnings, xp: 0 });
                 setTimeout(() => setShowCompletionBonus(null), 5000);
             }
         }
@@ -409,13 +427,10 @@ export const useTaskActions = (
             }
         }
 
-        if (lostAmount > 0) {
-            if (tasksChanged) setTasks(updatedTasks);
-            if (recurringChanged) setRecurringTasks(updatedRecurringTasks);
-            const newSpent = (character.spent || 0) + lostAmount;
-            await api.character.update({ ...character, spent: newSpent });
-            setCharacter(c => ({ ...c, spent: newSpent }));
-        }
+        // Just update the tasks state if statuses changed. 
+        // Money was already deducted upfront, so no need to charge again for losses.
+        if (tasksChanged) setTasks(updatedTasks);
+        if (recurringChanged) setRecurringTasks(updatedRecurringTasks);
     };
 
     return {

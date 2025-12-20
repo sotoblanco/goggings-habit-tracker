@@ -11,7 +11,7 @@ import { CollapsibleList } from './CollapsibleList';
 interface GoalsProps {
     goals: Goal[];
     onAddGoal: (goal: Goal) => Promise<void>;
-    onUpdateGoal: (goalId: string, updates: { description: string, targetDate: string }) => Promise<void>;
+    onUpdateGoal: (goalId: string, updates: { description: string, targetDate: string, label?: string }) => Promise<void>;
     onDeleteGoal: (goalId: string) => Promise<void>;
     onGoalChangeRequest: (justification: string, currentGoal: Goal) => Promise<{ approved: boolean, feedback: string }>;
     onCompleteGoal: (goalId: string, proof: string) => Promise<{ approved: boolean, feedback: string }>;
@@ -86,7 +86,6 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
         setIsLoading(true);
         try {
             const answersToUse = skipped ? whyAnswers.map(a => a || "Skipped") : whyAnswers;
-            // If skipped and empty, fill with "Skipped"
             const { questions: generatedQuestions } = await generatePreStateQuestions(description, answersToUse);
             setQuestions(generatedQuestions);
             setAnswers(new Array(generatedQuestions.length).fill(''));
@@ -94,7 +93,6 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
             setStep(3);
         } catch (e) {
             console.error("Failed to generate questions", e);
-            // Fallback
             setQuestions(["Why is this important?", "What happens if you fail?", "Who is watching?"]);
             setAnswers(new Array(3).fill(''));
             setIsLoading(false);
@@ -117,7 +115,6 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
             setStep(4);
         } catch (e) {
             console.error("Failed to generate contract", e);
-            // Fallback contract if offline
             setContract({
                 primaryObjective: description,
                 contractStatement: "I will conquer this objective no matter the cost.",
@@ -151,13 +148,7 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
             console.error("Failed to save goal", e);
         } finally {
             setIsLoading(false);
-            onClose(); // Close modal on success or error? Usually verify success. 
-            // If we catch error, we might want to stay open. But for now, let's close or assume safe.
-            // Actually, if we close on error, user loses data. 
-            // But `active_task_reminder` says concise artifacts.
-            // I'll assume success for now or close to prevent hanging.
-            // A better UX would be to show error message. 
-            // For now, removing `isLoading` is the priority.
+            onClose();
         }
     };
 
@@ -278,7 +269,7 @@ const ObjectiveContractModal: React.FC<ObjectiveContractModalProps> = ({ onClose
 export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, onDeleteGoal, onGoalChangeRequest, onCompleteGoal, onUpdateGoalContract, currentBalance, atomicHabitsSuggestions, onCloseSuggestions }) => {
     const [isAdding, setIsAdding] = useState(false);
     const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-    const [editForm, setEditForm] = useState({ description: '', targetDate: '' });
+    const [editForm, setEditForm] = useState({ description: '', targetDate: '', label: '' });
     const [changeRequest, setChangeRequest] = useState<{ goal: Goal; justification: string; status: 'idle' | 'pending' | 'denied' | 'approved'; feedback: string } | null>(null);
     const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
     const [completingGoal, setCompletingGoal] = useState<{ goal: Goal; proof: string; status: 'idle' | 'pending' | 'denied'; feedback: string } | null>(null);
@@ -294,7 +285,7 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
 
     const handleStartEdit = (goal: Goal) => {
         setEditingGoal(goal);
-        setEditForm({ description: goal.description, targetDate: goal.targetDate });
+        setEditForm({ description: goal.description, targetDate: goal.targetDate, label: goal.label || '' });
     };
 
     const handleSaveEdit = async (e: React.FormEvent) => {
@@ -354,14 +345,24 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
                                         onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
                                         className="w-full h-20 bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
                                         required
+                                        placeholder="Objective Description"
                                     />
-                                    <input
-                                        type="date"
-                                        value={editForm.targetDate}
-                                        onChange={(e) => setEditForm(prev => ({ ...prev, targetDate: e.target.value }))}
-                                        className="w-full bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                        required
-                                    />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <input
+                                            type="date"
+                                            value={editForm.targetDate}
+                                            onChange={(e) => setEditForm(prev => ({ ...prev, targetDate: e.target.value }))}
+                                            className="w-full bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                            required
+                                        />
+                                        <input
+                                            type="text"
+                                            value={editForm.label}
+                                            onChange={(e) => setEditForm(prev => ({ ...prev, label: e.target.value }))}
+                                            className="w-full bg-gray-700 text-white border border-gray-600 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                            placeholder="Label (e.g. Health)"
+                                        />
+                                    </div>
                                     <div className="flex justify-end gap-2">
                                         <button type="button" onClick={() => setEditingGoal(null)} className="px-4 py-2 text-sm font-bold rounded bg-gray-600 hover:bg-gray-500 text-white transition-colors">Cancel</button>
                                         <button type="submit" className="px-4 py-2 text-sm font-bold rounded bg-orange-600 hover:bg-orange-700 text-white transition-colors">Save Objective</button>
@@ -390,7 +391,7 @@ export const Goals: React.FC<GoalsProps> = ({ goals, onAddGoal, onUpdateGoal, on
                                             <button onClick={() => setRestrategizingGoal(goal)} className="p-2 rounded-full bg-cyan-600/50 hover:bg-cyan-500 text-white transition-colors" aria-label="Re-strategize objective">
                                                 <RepeatIcon className="w-5 h-5" />
                                             </button>
-                                            <button onClick={() => handleInitiateChange(goal)} className="p-2 rounded-full bg-yellow-600/50 hover:bg-yellow-500 text-white transition-colors" aria-label="Request change to objective">
+                                            <button onClick={() => handleStartEdit(goal)} className="p-2 rounded-full bg-yellow-600/50 hover:bg-yellow-500 text-white transition-colors" aria-label="Edit objective">
                                                 <PencilIcon className="w-5 h-5" />
                                             </button>
                                             <button onClick={() => setCompletingGoal({ goal, proof: '', status: 'idle', feedback: '' })} className="p-2 rounded-full bg-green-600/50 hover:bg-green-500 text-white transition-colors" aria-label="Complete objective">

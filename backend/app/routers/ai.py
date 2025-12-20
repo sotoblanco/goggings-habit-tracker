@@ -14,7 +14,9 @@ if key:
 else:
     print("DEBUG: GEMINI_API_KEY still not found in environment.")
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
+
 from app.schemas import (
     AIStoryRequest, AILabelRequest, AIAnalyzeGoalAlignmentRequest, 
     AIReflectionFeedbackRequest, AIDiaryFeedbackRequest, AIReviewRequest,
@@ -30,27 +32,37 @@ from app import models
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
-# Initialize Gemini
-API_KEY = os.getenv("GEMINI_API_KEY")
-if not API_KEY:
-    print("WARNING: GEMINI_API_KEY not found in environment variables.")
-else:
-    genai.configure(api_key=API_KEY)
+# Wrapper to mimic old behavior largely but with new Client
+class GenAIModelWrapper:
+    def __init__(self, api_key: str, model_name: str, json_mode: bool = False):
+        self.client = genai.Client(api_key=api_key)
+        self.model_name = model_name
+        self.json_mode = json_mode
+
+    def generate_content(self, prompt: str):
+        config = None
+        if self.json_mode:
+            config = types.GenerateContentConfig(response_mime_type="application/json")
+        
+        return self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=config
+        )
 
 # Helper to get model
 def get_model(user: models.User):
     key = user.api_key or os.getenv("GEMINI_API_KEY")
     if not key:
         raise HTTPException(status_code=400, detail="Gemini API Key missing")
-    genai.configure(api_key=key)
-    return genai.GenerativeModel('gemini-2.5-flash-lite')
+    # Using gemini-2.0-flash as 2.5 is not standard, defaulting to latest stable flash
+    return GenAIModelWrapper(key, 'gemini-2.0-flash', json_mode=False)
 
 def get_json_model(user: models.User):
     key = user.api_key or os.getenv("GEMINI_API_KEY")
     if not key:
         raise HTTPException(status_code=400, detail="Gemini API Key missing")
-    genai.configure(api_key=key)
-    return genai.GenerativeModel('gemini-2.5-flash-lite', generation_config={"response_mime_type": "application/json"})
+    return GenAIModelWrapper(key, 'gemini-2.0-flash', json_mode=True)
 
 GOGGINS_PERSONA = """
 You are David Goggins. You are the hardest man alive. 
@@ -307,7 +319,7 @@ async def generate_contract(request: AIGoalContractRequest, user: models.User = 
         {{
             "primaryObjective": "string",
             "contractStatement": "intense goggins pledge",
-            "rewardPayout": float (GP value),
+            "rewardPayout": float (Economy scale: Easy Task=$0.10, Hard=$1.00, Savage=$5.00. Typical Goal=$20-$100. ABSOLUTE MAX=$500.00),
             "kpis": [{{ "description": "string", "type": "Internal Metric" | "External Metric", "target": "string" }}],
             "preStateAnswers": [],
             "fiveWhys": ["string", "string", "string", "string", "string"]

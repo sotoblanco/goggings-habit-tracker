@@ -73,11 +73,12 @@ export const useGoalActions = (
                 await api.goals.update(updated);
                 setGoals(goals.map(g => g.id === goalId ? updated : g));
 
-                const newBonuses = (character.bonuses || 0) + GOAL_COMPLETION_REWARD;
+                const payout = goal.contract?.rewardPayout || GOAL_COMPLETION_REWARD;
+                const newBonuses = (character.bonuses || 0) + payout;
                 await api.character.update({ ...character, bonuses: newBonuses });
                 setCharacter(prev => ({ ...prev, bonuses: newBonuses }));
 
-                setShowCompletionBonus({ title: "Objective Conquered!", xp: 0, earnings: GOAL_COMPLETION_REWARD });
+                setShowCompletionBonus({ title: "Objective Conquered!", xp: 0, earnings: payout });
                 setTimeout(() => setShowCompletionBonus(null), 5000);
             } catch (e) { console.error(e); }
         }

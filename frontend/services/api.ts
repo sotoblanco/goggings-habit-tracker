@@ -5,7 +5,7 @@ import {
     User
 } from '../types';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:8000');
 
 const getToken = () => localStorage.getItem('goggins_auth_token');
 
